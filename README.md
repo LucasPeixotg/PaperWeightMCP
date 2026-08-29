@@ -13,7 +13,7 @@ PaperWeightMCP uses a two-stage hybrid retrieval strategy—combining fast seman
 - [ ] **HyDE translation layer** — improves recall by reformulating queries before search
 - [ ] **Text-to-SQL filtering** — natural language turned into precise metadata queries
 - [ ] **Citation graph traversal** — walk forward and backward through the literature
-- [ ] **Artifact discovery** — surface code, models, and datasets tied to a paper
+- [X] **Artifact discovery** — surface code, models, and datasets tied to a paper
 
 
 ## Tools
