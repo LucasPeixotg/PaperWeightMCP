@@ -24,7 +24,7 @@ PaperWeightMCP uses a two-stage hybrid retrieval strategy—combining fast seman
 |------|-------------|
 | `search_paper_abstracts(query, top_k)` | Semantic vector search over pre-indexed abstracts to retrieve the most relevant publications. |
 | `fetch_full_paper(paper_id_or_url)` | Downloads and extracts full-text content on the fly for granular details, equations, or code implementations. |
-| `query_paper_metadata(query, limit)` | Converts natural language into SQL via an internal SLM for exact filtering by date, citation count, author, or category. |
+| `query_paper_metadata(sql, limit)` | Executes a read-only SQL SELECT query against the papers metadata table for exact filtering by date, citation count, author, category, or other structured fields. |
 
 ### Citation & Impact Tracking
 

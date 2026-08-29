@@ -1,0 +1,21 @@
+services:
+  db:
+    image: postgres:16
+    container_name: paperweight-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-paperweight}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-paperweight}
+      POSTGRES_DB: ${POSTGRES_DB:-paperweight}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - ./data/paperweight_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-paperweight} -d ${POSTGRES_DB:-paperweight}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  paperweight_pgdata:

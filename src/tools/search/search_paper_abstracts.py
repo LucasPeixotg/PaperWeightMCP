@@ -1,3 +1,10 @@
+import json
+from dataclasses import asdict
+
+from services.rag import RagPipeline
+
+rag = RagPipeline()
+
 def search_paper_abstracts(query: str, top_k: int = 3) -> str:
     """
     Performs a semantic vector search over pre-indexed paper abstracts to retrieve 
@@ -14,4 +21,7 @@ def search_paper_abstracts(query: str, top_k: int = 3) -> str:
         JSON string containing a list of top-k paper matches with their paper IDs, 
         titles, publication years, abstracts, and direct paper URLs.
     """
-    return 'cannot return right now'
+    papers = rag.retrieve(query, top_k)
+    response = json.dumps([asdict(paper) for paper in papers], indent=2)
+
+    return response
