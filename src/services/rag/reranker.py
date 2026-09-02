@@ -4,29 +4,35 @@ from sentence_transformers import CrossEncoder
 
 from config import settings
 
+from .logger import get_logger
+from .paper_hit import PaperHit
+
+logger = get_logger(__name__)
 
 class Reranker:
     def __init__(self):
         
         self._reranker = CrossEncoder(settings.rerank_model_id)
 
-    def top(self, query: str, abstracts: list[str], top_k: int) -> list[str]:
+    def select_top(self, query: str, hits: list[PaperHit], top_k: int) -> list[PaperHit]:
         """Rerank candidate abstracts against a query using a cross-encoder.
 
         Args:
-            reranker: A loaded CrossEncoder model used to score (query, doc) pairs.
             query: The search query to rerank candidates against.
-            abstracts: Candidate documents (e.g. paper abstracts) to be reranked.
-            top_k: Number of top-scoring documents to return.
+            hits: Candidate PaperHit objects to be reranked.
+            top_k: Number of top-scoring hits to return.
 
         Returns:
-            The top_k abstracts, ordered by descending relevance score.
+            The top_k PaperHit objects, ordered by descending relevance score.
         """
+
+        logger.info(f"Selecting the top {top_k}")
+        abstracts = [hit.abstract for hit in hits]
         pairs = [(query, doc) for doc in abstracts]
 
         scores = self._reranker.predict(pairs)
         
-        # Sort by score descending
-        scored_docs = sorted(zip(abstracts, scores), key=lambda x: x[1], reverse=True)
+        # Sort hits by score descending
+        scored_hits = sorted(zip(hits, scores), key=lambda x: x[1], reverse=True)
 
-        return scored_docs[:top_k]
+        return [hit for hit, _ in scored_hits[:top_k]]

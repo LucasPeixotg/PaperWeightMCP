@@ -12,7 +12,9 @@ from .paper_hit import PaperHit
 from .rag_model import RagModel
 from .reranker import Reranker
 from .vectorstore import VectorStore  # owns index load + nearest-neighbor search
+from.logger import get_logger
 
+logger = get_logger(__name__)
 
 class RagPipeline:
     """Loads the model and vectorstore once, then serves retrieval queries."""
@@ -21,6 +23,8 @@ class RagPipeline:
         self.model = RagModel()
         self.vectorstore = VectorStore()
         self.reranker = Reranker()
+
+        logger.info("Pipeline loaded and ready to run")
 
     def retrieve(
         self,
@@ -38,7 +42,6 @@ class RagPipeline:
         fetch_k = top_k * 4
         hits = self.vectorstore.search(embedding, fetch_k)
 
-        abstracts = [hit.abstract for hit in hits]
-        most_relevant = self.reranker.top(query, abstracts, top_k)
+        most_relevant = self.reranker.select_top(query, hits, top_k)
 
         return most_relevant

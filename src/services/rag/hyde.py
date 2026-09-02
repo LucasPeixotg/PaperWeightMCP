@@ -9,13 +9,17 @@ import numpy as np
 
 from config import settings
 
+from .logger import get_logger
 from .rag_model import RagModel
+
+logger = get_logger(__name__)
 
 HYDE_PROMPT = "Write a plausible academic abstract answering: {query}"
 
 
 def hyde_embed(model: RagModel, query: str) -> np.ndarray:
     """Embed a query via a generated hypothetical abstract."""
+    logger.info(f"Generating an abstract to answer {query}")
     hypothetical_doc = model.generate(
         HYDE_PROMPT.format(query=query),
         max_new_tokens=settings.hyde_max_new_tokens,
