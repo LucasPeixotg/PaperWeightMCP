@@ -1,13 +1,10 @@
 """Wall-clock reporting for the phases of the bulk load.
 
 The load is an unattended setup step that runs for hours, so every phase has to
-say how long it took and — wherever a throughput can be measured — how much
-longer it has to go. Estimates are always extrapolated from the rate observed in
-the current run rather than from stored constants, so they are correct on
-whatever hardware the load happens to be running on.
-
-Imported by both `loader.py` and `embeddings.py`; `loader.py` imports
-`embeddings`, so this cannot live in either one.
+say how long it took. Throughput and time-remaining inside a phase are left to
+the tqdm bars in `loader.py` and `embeddings.py`, which extrapolate from the rate
+observed in the current run and so are correct on whatever hardware the load
+happens to be running on.
 """
 
 import time
@@ -28,18 +25,6 @@ def fmt_duration(seconds: float) -> str:
     if total < 3600:
         return f"{total // 60}m{total % 60:02d}s"
     return f"{total // 3600}h{total % 3600 // 60:02d}m"
-
-
-def eta(done: int, total: int, elapsed: float) -> str:
-    """'(71/s, ~11h42m left)' from the rate measured so far.
-
-    Returns "" until there is enough of a sample to divide by, so callers can
-    concatenate it unconditionally rather than guarding every call site.
-    """
-    if done <= 0 or elapsed <= 0:
-        return ""
-    rate = done / elapsed
-    return f"({rate:,.0f}/s, ~{fmt_duration((total - done) / rate)} left)"
 
 
 class Progress:
