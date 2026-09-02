@@ -5,3 +5,8 @@ faiss-cpu>=1.9
 # Progress bars for the COPY phase (src/loader.py) and the embed phase
 # (src/embeddings.py).
 tqdm>=4.66
+# Parses caller-supplied SQL in src/services/sql_guard.py so query_paper_metadata
+# can prove a statement is read-only before running it.
+sqlglot>=25
+# Unit tests for that guard (tests/).
+pytest>=8

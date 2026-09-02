@@ -1,3 +1,13 @@
+import json
+
+import psycopg
+from fastmcp.exceptions import ToolError
+
+from config import settings
+from services.db import read_only_connection
+from services.sql_guard import ensure_read_only
+
+
 def query_paper_metadata(sql: str, limit: int = 10) -> str:
     """
     Executes precise structured filtering on paper metadata by running a
@@ -37,12 +47,30 @@ def query_paper_metadata(sql: str, limit: int = 10) -> str:
              table (e.g. "SELECT id, title FROM papers WHERE categories
              LIKE '%cs.AI%' AND update_date >= '2024-01-01'").
         limit: Maximum number of matching metadata records to return
-               (default is 10). If the SQL query does not already include
-               its own LIMIT clause, this value is applied.
+               (default is 10, capped at 100). If the SQL query does not
+               already include its own LIMIT clause, this value is applied.
 
     Returns:
         JSON string containing structured metadata records matching the
         query (e.g. id, title, authors, categories, update_date, and any
-        other selected columns).
+        other selected columns). At most 100 records are returned, however
+        large a LIMIT the query itself asks for.
     """
-    return 'cannot return right now'
+    limit = max(1, min(limit, settings.metadata_max_rows))
+    safe_sql = ensure_read_only(sql, limit)
+
+    with read_only_connection() as conn, conn.cursor() as cur:
+        try:
+            cur.execute(safe_sql)
+            # fetchmany, not fetchall: the cap has to hold even when the caller
+            # wrote its own LIMIT, and nothing good comes of pulling 3.1M rows
+            # into the response.
+            rows = cur.fetchmany(settings.metadata_max_rows)
+        except psycopg.Error as exc:
+            # An unknown column or a statement timeout is something the calling
+            # model can fix, so give it the message rather than a traceback.
+            raise ToolError(f"query failed: {str(exc).strip()}") from exc
+
+    # default=str renders update_date (a datetime.date); the JSONB columns come
+    # back from psycopg already decoded into lists and dicts.
+    return json.dumps(rows, indent=2, default=str)

@@ -52,6 +52,9 @@ class Settings(BaseSettings):
 
     db_connect_timeout: int = 10
     db_statement_timeout_ms: int = 30_000  # ceiling for tool queries, not for the loader
+    # Hard ceiling on rows returned by query_paper_metadata, applied even when the
+    # caller's own SQL asks for more — the table holds ~3.1M rows.
+    metadata_max_rows: int = 100
 
     # FAISS abstract index, built by src/embeddings.py into ./data
     faiss_dir: Path = ROOT_DIR / "data" / "faiss"
