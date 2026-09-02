@@ -5,3 +5,5 @@ faiss-cpu>=1.9
 # Progress bars for the COPY phase (src/loader.py) and the embed phase
 # (src/embeddings.py).
 tqdm>=4.66
+# Test runner.
+pytest>=8

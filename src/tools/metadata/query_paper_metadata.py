@@ -29,7 +29,8 @@ def query_paper_metadata(sql: str, limit: int = 10) -> str:
             abstract        TEXT,
             update_date     DATE,
             versions        JSONB,                 -- list of {version, created}
-            authors_parsed  JSONB                  -- list of [last, first, suffix]
+            authors_parsed  JSONB,                 -- list of [last, first, suffix]
+            search_vec      TSVECTOR               -- full-text index payload; never SELECT it
         );
 
     Args:

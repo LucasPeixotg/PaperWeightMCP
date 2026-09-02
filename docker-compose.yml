@@ -9,6 +9,19 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-paperweight}
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
+    # The stock 128MB shared_buffers cannot hold the working set of a 10GB
+    # database, and the full-text arm of the retriever is heap-bound: ranking a
+    # query with ~26k matches read 431MB of heap pages on every single run,
+    # cached none of it, and took 4.1s. These two settings are what make that
+    # query fast; raise them further if the host has the RAM.
+    command: >
+      postgres
+      -c shared_buffers=2GB
+      -c effective_cache_size=5GB
+    # Docker's default 64MB /dev/shm is where parallel workers exchange tuples,
+    # and a parallel scan over `papers` overruns it ("could not resize shared
+    # memory segment"). Postgres images need this raised explicitly.
+    shm_size: 1gb
     volumes:
       - ./data/paperweight_pgdata:/var/lib/postgresql/data
     healthcheck:

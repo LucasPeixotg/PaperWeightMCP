@@ -39,6 +39,25 @@ class Settings(BaseSettings):
     # Retrieval
     default_top_k: int = 3
 
+    # Hybrid retrieval: the dense arm (FAISS) and the lexical arm (Postgres
+    # full-text) each contribute a ranked list, which RRF merges into one pool.
+    # Must match the regconfig baked into papers.search_vec by src/fts.py.
+    fts_config: str = "english"
+    dense_k: int = 50                  # candidates pulled from FAISS
+    lexical_k: int = 50                # candidates pulled from ts_rank_cd
+    # RRF damping. 60 is the constant from the original TREC paper; larger
+    # values flatten the advantage of the very top ranks.
+    rrf_k: int = 60
+    # The cost knob: every fused candidate is a cross-encoder forward pass over
+    # a ~1,000-character abstract.
+    rerank_pool: int = 40
+    # ts_rank_cd has to read every matching row's tsvector out of the heap, so
+    # cost scales with match count: a two-word query matching ~26k rows takes
+    # ~90ms warm, but a single very common term matching ~158k takes seconds.
+    # Give up on those rather than stall the tool — a query that broad is one
+    # the dense arm answers better anyway, and retrieval carries on without it.
+    lexical_timeout_ms: int = 3_000
+
     # Postgres — these mirror the POSTGRES_* vars docker-compose.yml interpolates,
     # so a single .env drives the container and the client identically.
     postgres_user: str = "paperweht"
