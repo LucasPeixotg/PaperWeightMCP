@@ -8,7 +8,7 @@ from embeddings import load_embedder
 class RagModel:
     """Loads the generative model + embedder and exposes the core generate pipeline.
 
-    Task-specific logic (HyDE, text-to-SQL, etc.) lives in separate modules
+    Task-specific logic (HyDE, etc.) lives in separate modules
     that take a RagModel instance as a dependency — this class stays focused
     on loading weights and running generation.
     """
