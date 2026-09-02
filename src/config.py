@@ -16,8 +16,9 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 
 class Settings(BaseSettings):
     # Models
-    gen_model_id: str = "Qwen/Qwen3-1.7B"
+    gen_model_id: str = "Qwen/Qwen3-0.6B"
     embed_model_id: str = "allenai/specter2_base"
+    rerank_model_id: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 
     # How the generative model is placed on the available hardware
     dtype: str = "bfloat16"

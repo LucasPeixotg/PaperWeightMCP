@@ -4,11 +4,14 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from config import settings
 from embeddings import load_embedder
 
+from .logger import get_logger
+
+logger = get_logger(__name__)
 
 class RagModel:
     """Loads the generative model + embedder and exposes the core generate pipeline.
 
-    Task-specific logic (HyDE, text-to-SQL, etc.) lives in separate modules
+    Task-specific logic (HyDE, etc.) lives in separate modules
     that take a RagModel instance as a dependency — this class stays focused
     on loading weights and running generation.
     """
@@ -24,12 +27,16 @@ class RagModel:
         # and query vectors must come from the identical encoder as the documents.
         self.embedder = load_embedder()
 
+        logger.info("Model loaded and ready")
+
     def generate(
         self,
         prompt: str,
         max_new_tokens: int = settings.default_max_new_tokens,
         temperature: float = settings.default_temperature,
     ) -> str:
+        logger.info(f"Generating response to {prompt}")
+        
         # return_dict is the transformers default now, so ask for it explicitly and
         # unpack — passing the BatchEncoding itself lands it in `inputs_tensor`.
         inputs = self.tok.apply_chat_template(
