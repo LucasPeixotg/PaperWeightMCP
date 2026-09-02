@@ -12,14 +12,14 @@ import math
 import os
 import shutil
 import sys
-import time
+from contextlib import nullcontext
 from pathlib import Path
 
 import numpy as np
 import psycopg
+from tqdm import tqdm
 
 from config import settings
-from progress import eta
 
 # arXiv ids are at most 16 characters ("supr-con/9609002"), verified against the
 # whole table, so a fixed-width byte array maps ordinals back to ids compactly.
@@ -79,6 +79,24 @@ def ids_path() -> Path:
 
 def trained_path() -> Path:
     return settings.faiss_dir / "abstracts.trained"
+
+
+def needs_training() -> bool:
+    """True when the next build will have to embed a training sample.
+
+    Both a checkpoint and a saved quantizer let `train` return without embedding
+    anything, so only their absence means the multi-minute sample pass actually
+    runs. `loader.py` asks before the run starts, to decide whether training is
+    a phase of its own in the "[2/4]" counter.
+    """
+    if index_path().exists() and ids_path().exists():
+        return False
+    return not trained_path().exists()
+
+
+def _phase(progress, label):
+    """`progress.phase(label)`, or a no-op when the caller kept no Progress."""
+    return nullcontext() if progress is None else progress.phase(label)
 
 
 def _atomic_write(path: Path, write) -> None:
@@ -219,14 +237,13 @@ def train(model, conn, nlist: int, sample_size: int):
     ).fetchall()
 
     print(f"  embedding {len(rows):,} training vectors ...")
-    started = time.monotonic()
     chunks = []
-    for i in range(0, len(rows), settings.embed_page_size):
-        chunk = rows[i : i + settings.embed_page_size]
-        chunks.append(encode(model, chunk))
-        done = min(i + len(chunk), len(rows))
-        elapsed = time.monotonic() - started
-        print(f"    {done:,}/{len(rows):,}  {eta(done, len(rows), elapsed)}", flush=True)
+    with tqdm(total=len(rows), unit=" vec", desc="  training sample",
+              smoothing=0.05) as bar:
+        for i in range(0, len(rows), settings.embed_page_size):
+            chunk = rows[i : i + settings.embed_page_size]
+            chunks.append(encode(model, chunk))
+            bar.update(len(chunk))
     training = np.vstack(chunks)
 
     quantizer = faiss.IndexFlatIP(settings.embed_dim)
@@ -269,8 +286,14 @@ def _load_checkpoint(index_file: Path, ids_file: Path):
     return index, ids
 
 
-def build(raw_conn, limit: int | None = None, nlist: int | None = None) -> dict:
-    """Embed every paper and write the FAISS index. Resumable."""
+def build(raw_conn, limit: int | None = None, nlist: int | None = None,
+          progress=None) -> dict:
+    """Embed every paper and write the FAISS index. Resumable.
+
+    Runs as two `progress` phases — training the quantizer on a sample, then
+    embedding the corpus — because the two counts are wildly different and a
+    single header made the sample look like the whole job.
+    """
     import faiss
 
     preflight()
@@ -286,14 +309,39 @@ def build(raw_conn, limit: int | None = None, nlist: int | None = None) -> dict:
         nlist = max(64, min(settings.faiss_nlist, int(4 * math.sqrt(total))))
     train_target = min(settings.faiss_train_sample, total, max(10_000, 40 * nlist))
 
+    # Asked before `_load_checkpoint`, though neither writes, so the phase list
+    # `loader.py` built from the same question cannot disagree with this run.
+    wants_training = needs_training()
+
     index, ids = _load_checkpoint(index_path(), ids_path())
     model = None
 
     if index is None:
         model = load_embedder()
-        index = train(model, conn, nlist, train_target)
+        # Not a phase when `train` will just reload the saved quantizer: an
+        # instant step announced as a phase reads like something went wrong.
+        label = (f"train IVF-PQ (nlist={nlist:,}) "
+                 f"on {train_target:,} sampled abstracts")
+        with _phase(progress if wants_training else None, label):
+            index = train(model, conn, nlist, train_target)
     else:
         print(f"  resuming from {len(ids):,} vectors already indexed")
+
+    embed_label = f"embed {total:,} abstracts"
+    if ids:
+        embed_label += f" ({len(ids):,} already done)"
+
+    with _phase(progress, embed_label):
+        return _embed(conn, index, ids, model, total, limit)
+
+
+def _embed(conn, index, ids, model, total: int, limit: int | None) -> dict:
+    """The corpus pass: embed from `ids` to `total`, checkpointing as it goes.
+
+    Split out of `build` only so the phase it runs under is a single `with`
+    rather than an indent wrapped around the whole function.
+    """
+    import faiss
 
     if len(ids) >= total:
         print("  index already complete")
@@ -303,13 +351,8 @@ def build(raw_conn, limit: int | None = None, nlist: int | None = None) -> dict:
         model = load_embedder()
 
     after_id = ids[-1].decode() if ids else None
-    started = time.monotonic()
     since_checkpoint = 0
     added = 0
-    # A resumed build measures its rate over this session only, so the estimate
-    # is projected across the vectors still outstanding rather than across the
-    # whole corpus — otherwise resuming at 3M/3.1M would still predict 12 hours.
-    outstanding = total - len(ids)
 
     def checkpoint():
         # ids first, then the index — see _load_checkpoint for why the order matters
@@ -326,6 +369,17 @@ def build(raw_conn, limit: int | None = None, nlist: int | None = None) -> dict:
             ("abstracts", "running", len(ids), ids[-1].decode(), settings.embed_model_id),
         )
 
+    # `initial` is what keeps a resumed build honest: tqdm measures its rate over
+    # (n - initial), i.e. over this session only, and so projects the vectors
+    # still outstanding — otherwise resuming at 3.0M/3.1M would keep predicting
+    # the full 12 hours. The bar itself still counts from 0 to the whole corpus.
+    bar = tqdm(
+        total=total,
+        initial=len(ids),
+        unit=" vec",
+        desc="embedding abstracts",
+        smoothing=0.05,
+    )
     try:
         for rows in iter_pages(conn, after_id, None if limit is None else limit - len(ids)):
             vectors = encode(model, rows)
@@ -333,20 +387,18 @@ def build(raw_conn, limit: int | None = None, nlist: int | None = None) -> dict:
             ids.extend(r[0].encode() for r in rows)
             added += len(rows)
             since_checkpoint += len(rows)
-
-            elapsed = time.monotonic() - started
-            print(
-                f"  {len(ids):,}/{total:,}  {eta(added, outstanding, elapsed)}",
-                flush=True,
-            )
+            bar.update(len(rows))
 
             if since_checkpoint >= settings.embed_checkpoint_every:
                 checkpoint()
                 since_checkpoint = 0
-                print(f"  checkpointed at {len(ids):,}", flush=True)
+                # Through the bar, so the note scrolls above it instead of
+                # cutting the bar in half.
+                bar.write(f"  checkpointed at {len(ids):,}")
     finally:
         if ids:
             checkpoint()
+        bar.close()
 
     complete = len(ids) >= total
     conn.execute(

@@ -2,5 +2,6 @@ psycopg[binary]>=3.2,<4
 # macOS: faiss and torch each vendor libomp.dylib and segfault when both load.
 # src/embeddings.py detects this and prints the one-line symlink fix.
 faiss-cpu>=1.9
-# Progress bar for the bulk loader's COPY phase (src/loader.py).
+# Progress bars for the COPY phase (src/loader.py) and the embed phase
+# (src/embeddings.py).
 tqdm>=4.66

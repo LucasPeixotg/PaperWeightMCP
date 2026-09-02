@@ -493,7 +493,12 @@ def main() -> int:
             labels += ["copy into postgres", "dedupe + primary key"]
             labels.append("secondary indexes + analyze" if not args.no_indexes else "analyze")
         if not args.skip_embeddings and not embed_built:
-            labels.append("abstract embeddings")
+            # Two phases, not one: the quantizer trains on a sample orders of
+            # magnitude smaller than the corpus, and folding them under a single
+            # header made that sample look like the entire index.
+            if embeddings.needs_training():
+                labels.append("train IVF-PQ quantizer")
+            labels.append("embed abstracts")
         progress = Progress(labels)
 
         # --- Postgres ---
@@ -522,9 +527,12 @@ def main() -> int:
 
         embeddings.preflight()
         print(f"building abstract index in {settings.faiss_dir}")
-        with progress.phase("abstract embeddings"):
-            result = embeddings.build(conn, limit=args.limit, nlist=args.nlist)
-        print(f"index holds {result['total']:,} vectors")
+        # build() opens its own phases — it is the only caller that knows the
+        # sample size and the corpus size the labels have to carry.
+        result = embeddings.build(
+            conn, limit=args.limit, nlist=args.nlist, progress=progress
+        )
+        print(f"abstract index holds {result['total']:,} vectors")
 
     return 0
 
