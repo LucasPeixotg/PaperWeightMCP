@@ -8,7 +8,7 @@ PaperWeightMCP uses a two-stage hybrid retrieval strategy—combining fast seman
  
 > 🚧 **Status:** PaperWeightMCP is under active development. The features below are currently being built.
  
-- [ ] **Hybrid retrieval** — semantic search over abstracts plus exact metadata filtering
+- [X] **Hybrid retrieval** — semantic vector search fused with Postgres full-text search, so paraphrases and literal terms both hit
 - [ ] **Low storage footprint** — full texts are fetched on demand rather than stored locally
 - [ ] **HyDE translation layer** — improves recall by reformulating queries before search
 - [ ] **Text-to-SQL filtering** — natural language turned into precise metadata queries
@@ -22,7 +22,7 @@ PaperWeightMCP uses a two-stage hybrid retrieval strategy—combining fast seman
 
 | Tool | Description |
 |------|-------------|
-| `search_paper_abstracts(query, top_k)` | Semantic vector search over pre-indexed abstracts to retrieve the most relevant publications. |
+| `search_paper_abstracts(query, top_k)` | Hybrid search over pre-indexed abstracts — semantic vector search and full-text search fused by reciprocal rank — to retrieve the most relevant publications. |
 | `fetch_full_paper(paper_id_or_url)` | Downloads and extracts full-text content on the fly for granular details, equations, or code implementations. |
 | `query_paper_metadata(sql, limit)` | Executes a read-only SQL SELECT query against the papers metadata table for exact filtering by date, citation count, author, category, or other structured fields. |
 

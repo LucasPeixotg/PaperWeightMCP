@@ -7,8 +7,6 @@ positions in the id map written alongside the index by `src/embeddings.py`.
 
 from __future__ import annotations
 
-from email.utils import parsedate_to_datetime
-
 import faiss
 import numpy as np
 
@@ -18,7 +16,6 @@ from services.db import read_only_connection
 from .logger import get_logger
 from .paper_hit import PaperHit
 
-ARXIV_URL = "https://arxiv.org/abs/{paper_id}"
 IVFPQ_FILENAME = "abstracts.ivfpq"
 NPY_FILENAME = "paper_ids.npy"
 
@@ -31,16 +28,6 @@ HYDRATE_SQL = """
 """
 
 logger = get_logger(__name__)
-
-
-def _year(created: str | None) -> int:
-    """Year from an RFC-2822 version date, e.g. 'Mon, 2 Apr 2007 19:18:42 GMT'."""
-    if not created:
-        return 0
-    try:
-        return parsedate_to_datetime(created).year
-    except (TypeError, ValueError):
-        return 0
 
 
 def _l2_normalize(vectors: np.ndarray) -> None:
@@ -97,7 +84,7 @@ class VectorStore:
 
         rows_by_id = self._hydrate(ranked_ids)
         return [
-            self._to_hit(pid, rows_by_id[pid]) for pid in ranked_ids if pid in rows_by_id
+            PaperHit.from_row(rows_by_id[pid]) for pid in ranked_ids if pid in rows_by_id
         ]
 
     def _nearest_ids(self, embedding: np.ndarray, k: int) -> list[str]:
@@ -118,13 +105,3 @@ class VectorStore:
         with read_only_connection() as conn:
             rows = conn.execute(HYDRATE_SQL, (paper_ids,)).fetchall()
         return {row["id"]: row for row in rows}
-
-    @staticmethod
-    def _to_hit(paper_id: str, row: dict) -> PaperHit:
-        return PaperHit(
-            paper_id=paper_id,
-            title=row["title"],
-            year=_year(row["created"]),
-            abstract=row["abstract"],
-            url=ARXIV_URL.format(paper_id=paper_id),
-        )
