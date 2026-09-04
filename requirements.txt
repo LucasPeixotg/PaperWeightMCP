@@ -1,7 +1,29 @@
 psycopg[binary]>=3.2,<4
+# The MCP server itself (src/server.py) and the ToolError type the metadata
+# tools raise (src/services/sql_guard.py).
+fastmcp>=2.0
+# Loads src/config.py's Settings from the environment and the .env at the repo
+# root; SettingsConfigDict needs the 2.x API.
+pydantic-settings>=2.0
 # macOS: faiss and torch each vendor libomp.dylib and segfault when both load.
 # src/embeddings.py detects this and prints the one-line symlink fix.
 faiss-cpu>=1.9
+# The vectors handed to FAISS, in src/embeddings.py and
+# src/services/rag/vectorstore.py. 2.x matches the ABI faiss-cpu builds against.
+numpy>=2.0
+# Backs both models: dtype strings resolved to torch dtypes in
+# src/services/rag/rag_model.py, and the torch.backends.mps probe that falls
+# back to CPU in load_embedder().
+torch>=2.2
+# Qwen3 (settings.gen_model_id) writes the HyDE abstracts and the SQL in
+# src/services/rag/rag_model.py. 4.51 is the first release with that architecture.
+transformers>=4.51
+# rag_model.py loads the generative model with device_map="auto", and
+# transformers refuses device_map without accelerate installed.
+accelerate>=0.26
+# The SPECTER2 abstract embedder assembled with CLS pooling in
+# src/embeddings.py, and the cross-encoder in src/services/rag/reranker.py.
+sentence-transformers>=3.0
 # Progress bars for the COPY phase (src/loader.py) and the embed phase
 # (src/embeddings.py).
 tqdm>=4.66

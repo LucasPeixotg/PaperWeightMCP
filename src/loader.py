@@ -12,6 +12,10 @@ anything, so it is safe to re-run.
 The snapshot is ~5.5 GB / ~3.1M records, so the load takes minutes and writes
 several GB of WAL. It is deliberately a setup step rather than something
 `server.py` does at startup.
+
+A database loaded before the full-text column existed picks it up with:
+
+    python src/loader.py --only-fts
 """
 
 import argparse
@@ -24,6 +28,7 @@ from pathlib import Path
 
 from tqdm import tqdm
 
+import fts
 from config import masked_dsn, settings
 from progress import Progress
 
@@ -49,7 +54,11 @@ COLUMNS = (
 # The primary key is added after the COPY, not declared here: maintaining a
 # btree across 3.1M inserts is the classic bulk-load tax. Adding it afterwards
 # is one scan plus a sort, and it still rejects duplicate ids.
-CREATE_PAPERS_SQL = """
+# `search_vec` is generated, so COPY computes it inline rather than paying for
+# the table rewrite `src/fts.py` needs on a database loaded before it existed.
+# It is deliberately absent from COLUMNS: COPY names its columns, and Postgres
+# rejects a generated column appearing in that list.
+CREATE_PAPERS_SQL = f"""
 CREATE TABLE papers (
     id              TEXT,                  -- arXiv id, e.g. "0704.0001"
     submitter       TEXT,
@@ -63,8 +72,9 @@ CREATE TABLE papers (
     license         TEXT,
     abstract        TEXT,
     update_date     DATE,
-    versions        JSONB,                 -- list of {version, created}
-    authors_parsed  JSONB                  -- list of [last, first, suffix, ...]
+    versions        JSONB,                 -- list of {{version, created}}
+    authors_parsed  JSONB,                 -- list of [last, first, suffix, ...]
+    {fts.column_ddl()}
 )
 """
 
@@ -120,6 +130,9 @@ INDEX_SQL = (
     "ON papers USING gin (categories gin_trgm_ops)",
     "CREATE INDEX IF NOT EXISTS papers_title_trgm_idx "
     "ON papers USING gin (title gin_trgm_ops)",
+    # Full-text ranking for the lexical arm of the hybrid retriever.
+    f"CREATE INDEX IF NOT EXISTS {fts.INDEX_NAME} "
+    f"ON papers USING gin ({fts.COLUMN_NAME})",
 )
 
 # Arbitrary but stable key for the advisory lock that serializes loader runs
@@ -414,6 +427,16 @@ def main() -> int:
         help="Build the FAISS index only; assume Postgres is already loaded.",
     )
     parser.add_argument(
+        "--skip-fts",
+        action="store_true",
+        help="Do not add the full-text search column and index.",
+    )
+    parser.add_argument(
+        "--only-fts",
+        action="store_true",
+        help="Add the full-text search column and index only; assume Postgres is loaded.",
+    )
+    parser.add_argument(
         "--no-indexes",
         action="store_true",
         help="Skip the secondary indexes built after the load.",
@@ -477,12 +500,19 @@ def main() -> int:
         # Work out every phase this run will execute before announcing the first
         # one: the "[2/4]" denominator has to account for phases that a flag or
         # an already-finished load will skip.
-        run_postgres = not args.only_embeddings and (args.force or not is_loaded(conn))
+        only_one = args.only_embeddings or args.only_fts
+        run_postgres = not only_one and (args.force or not is_loaded(conn))
+
+        # A fresh load already declares search_vec and builds its GIN index, so
+        # the migration phase is only for a table that predates them.
+        run_fts = False
+        if not args.skip_fts and not (run_postgres and not args.no_indexes):
+            run_fts = not fts.is_built(conn)
 
         # Imported here, not at module scope, so --dry-run and --skip-embeddings
         # work without numpy and faiss installed.
         embed_built = False
-        if not args.skip_embeddings:
+        if not args.skip_embeddings and not args.only_fts:
             import embeddings
 
             conn.execute(embeddings.CREATE_EMBED_STATE_SQL)
@@ -492,7 +522,9 @@ def main() -> int:
         if run_postgres:
             labels += ["copy into postgres", "dedupe + primary key"]
             labels.append("secondary indexes + analyze" if not args.no_indexes else "analyze")
-        if not args.skip_embeddings and not embed_built:
+        if run_fts:
+            labels.append("full-text index")
+        if not args.skip_embeddings and not args.only_fts and not embed_built:
             # Two phases, not one: the quantizer trains on a sample orders of
             # magnitude smaller than the corpus, and folding them under a single
             # header made that sample look like the entire index.
@@ -503,9 +535,10 @@ def main() -> int:
 
         # --- Postgres ---
         stats = None
-        if args.only_embeddings:
+        if only_one:
+            flag = "--only-embeddings" if args.only_embeddings else "--only-fts"
             if not has_papers(conn):
-                print("papers table is empty; run without --only-embeddings first",
+                print(f"papers table is empty; run without {flag} first",
                       file=sys.stderr)
                 return 1
         elif not run_postgres:
@@ -517,8 +550,18 @@ def main() -> int:
         if stats is not None:
             _report(stats)
 
+        # --- Full-text index ---
+        # Before the embed, not after: it takes minutes rather than hours, and
+        # its ALTER needs an ACCESS EXCLUSIVE lock the embed's long-running
+        # reads would otherwise hold it behind.
+        if run_fts:
+            fts.preflight(conn)
+            fts.build(conn, progress)
+        elif args.only_fts:
+            print("full-text index already built — nothing to do")
+
         # --- FAISS abstract index ---
-        if args.skip_embeddings:
+        if args.skip_embeddings or args.only_fts:
             return 0
         if embed_built:
             print("abstract index already built — nothing to do "
