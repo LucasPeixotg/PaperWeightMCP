@@ -6,6 +6,12 @@ That is not only about speed: what the function actually owns is the ordering
 contract around the scores, and a fake scorer is the only way to state a case
 like "these two papers tie" and know it holds.
 
+Selection is the other half of what the function owns, and it is not just a
+slice: `top_k` counts papers that carry an abstract, and the abstract-less ones
+passed on the way to filling it come back in a second list rather than being
+dropped. A stubbed scorer is what lets a test state "this paper outranks that
+one and has no abstract" and know which list each lands in.
+
 The cases worth the file are the ones the wiring can get wrong. Sorting the
 (paper, score) pairs directly rather than by key reads fine and works right up
 until two papers tie, where it compares PaperData and raises — so both the tie
@@ -20,7 +26,7 @@ import pytest
 
 from common import PaperData
 from services.models import reranker
-from services.models.reranker import rerank
+from services.models.reranker import RerankedPapers, rerank
 
 ABSTRACT = (
     "We propose a new simple network architecture, the Transformer, based solely "
@@ -85,7 +91,7 @@ def test_papers_come_back_in_descending_score_order(model):
     first, second, third = paper(paper_id="A"), paper(paper_id="B"), paper(paper_id="C")
     model(0.1, 0.9, 0.5)
 
-    ranked = rerank("attention mechanisms", [first, second, third], top_k=3)
+    ranked = rerank("attention mechanisms", [first, second, third], top_k=3).papers
 
     assert [p.paper_id for p in ranked] == ["B", "C", "A"]
 
@@ -95,7 +101,7 @@ def test_only_top_k_are_returned(model):
     papers = [paper(paper_id=str(index)) for index in range(5)]
     model(0.1, 0.2, 0.3, 0.4, 0.5)
 
-    ranked = rerank("attention", papers, top_k=2)
+    ranked = rerank("attention", papers, top_k=2).papers
 
     assert [p.paper_id for p in ranked] == ["4", "3"]
 
@@ -105,7 +111,7 @@ def test_a_top_k_larger_than_the_pool_returns_every_paper(model):
     papers = [paper(paper_id="A"), paper(paper_id="B")]
     model(0.2, 0.8)
 
-    assert len(rerank("attention", papers, top_k=10)) == 2
+    assert len(rerank("attention", papers, top_k=10).papers) == 2
 
 
 def test_a_score_tie_is_broken_by_the_source_relevance_score(model):
@@ -123,7 +129,7 @@ def test_a_score_tie_is_broken_by_the_source_relevance_score(model):
     ]
     model(0.5, 0.5, 0.5)
 
-    ranked = rerank("attention", papers, top_k=3)
+    ranked = rerank("attention", papers, top_k=3).papers
 
     assert [p.paper_id for p in ranked] == ["B", "C", "A"]
 
@@ -140,7 +146,7 @@ def test_the_model_score_outranks_the_relevance_score(model):
     ]
     model(0.1, 0.9)
 
-    ranked = rerank("attention", papers, top_k=2)
+    ranked = rerank("attention", papers, top_k=2).papers
 
     assert [p.paper_id for p in ranked] == ["B", "A"]
 
@@ -155,7 +161,7 @@ def test_papers_tied_on_both_scores_keep_their_input_order(model):
     papers = [paper(paper_id="A"), paper(paper_id="B"), paper(paper_id="C")]
     model(0.5, 0.5, 0.5)
 
-    ranked = rerank("attention", papers, top_k=3)
+    ranked = rerank("attention", papers, top_k=3).papers
 
     assert [p.paper_id for p in ranked] == ["A", "B", "C"]
 
@@ -198,7 +204,7 @@ def test_a_blank_query_keeps_the_upstream_order_without_loading_the_model(model)
     stub = model(0.9, 0.1)
     papers = [paper(paper_id="A"), paper(paper_id="B"), paper(paper_id="C")]
 
-    ranked = rerank("   ", papers, top_k=2)
+    ranked = rerank("   ", papers, top_k=2).papers
 
     assert [p.paper_id for p in ranked] == ["A", "B"]
     assert stub.calls == []
@@ -218,7 +224,7 @@ def test_a_blank_query_ranks_by_the_source_relevance_score(model):
         paper(paper_id="C", relevance_score=1.1),
     ]
 
-    ranked = rerank("   ", papers, top_k=2)
+    ranked = rerank("   ", papers, top_k=2).papers
 
     assert [p.paper_id for p in ranked] == ["B", "C"]
     assert stub.calls == []
@@ -233,7 +239,7 @@ def test_nothing_to_rank_returns_empty_without_loading_the_model(model, papers, 
     """A cold cache would otherwise pay a ~90MB download to return an empty list."""
     stub = model(0.5)
 
-    assert rerank("attention", papers, top_k) == []
+    assert rerank("attention", papers, top_k) == RerankedPapers([], [])
     assert stub.calls == []
 
 
@@ -245,3 +251,116 @@ def test_the_input_list_is_not_mutated(model):
     rerank("attention", papers, top_k=2)
 
     assert [p.paper_id for p in papers] == ["A", "B"]
+
+
+def test_top_k_skips_past_papers_with_no_abstract(model):
+    """The point of the split: a title-only record must not spend a `top_k` slot.
+
+    G and H are only reached because B, C and F were skipped — a plain
+    `ranked[:top_k]` would have returned two papers the caller cannot read.
+    """
+    papers = [
+        paper(paper_id="A"),
+        paper(paper_id="B", abstract=""),
+        paper(paper_id="C", abstract=""),
+        paper(paper_id="D"),
+        paper(paper_id="E"),
+        paper(paper_id="F", abstract=""),
+        paper(paper_id="G"),
+        paper(paper_id="H"),
+    ]
+    model(0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1)
+
+    reranked = rerank("attention", papers, top_k=5)
+
+    assert [p.paper_id for p in reranked.papers] == ["A", "D", "E", "G", "H"]
+
+
+def test_the_papers_skipped_while_filling_top_k_come_back_separately(model):
+    """Skipped is not discarded — the model rated these over papers that made the cut.
+
+    F is the case that matters: it falls outside the *original* top five, so only a
+    walk that tracks what it passed reports it. It still outranks G and H, which the
+    caller is being handed.
+    """
+    papers = [
+        paper(paper_id="A"),
+        paper(paper_id="B", abstract=""),
+        paper(paper_id="C", abstract=""),
+        paper(paper_id="D"),
+        paper(paper_id="E"),
+        paper(paper_id="F", abstract=""),
+        paper(paper_id="G"),
+        paper(paper_id="H"),
+    ]
+    model(0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1)
+
+    reranked = rerank("attention", papers, top_k=5)
+
+    assert [p.paper_id for p in reranked.possible_non_open_papers] == ["B", "C", "F"]
+
+
+def test_an_abstractless_paper_below_the_cut_is_dropped(model):
+    """It displaced nothing, so there is nothing to report about it.
+
+    The walk stops the moment `top_k` abstracts are collected. Reporting C would
+    mean reporting the whole tail of the pool, which is the ranking's business.
+    """
+    papers = [
+        paper(paper_id="A"),
+        paper(paper_id="B"),
+        paper(paper_id="C", abstract=""),
+    ]
+    model(0.9, 0.8, 0.7)
+
+    reranked = rerank("attention", papers, top_k=2)
+
+    assert [p.paper_id for p in reranked.papers] == ["A", "B"]
+    assert reranked.possible_non_open_papers == []
+
+
+def test_a_whitespace_only_abstract_counts_as_missing(model):
+    """It says exactly as much as the empty string, and `_as_document` drops it too."""
+    papers = [paper(paper_id="A", abstract="   \n  "), paper(paper_id="B")]
+    model(0.9, 0.1)
+
+    reranked = rerank("attention", papers, top_k=1)
+
+    assert [p.paper_id for p in reranked.papers] == ["B"]
+    assert [p.paper_id for p in reranked.possible_non_open_papers] == ["A"]
+
+
+def test_a_pool_short_on_abstracts_returns_fewer_than_top_k(model):
+    """Asking for five when two are readable is not an error — the pool is what it is.
+
+    The walk consumes the whole pool looking for a fifth abstract, so every
+    abstract-less paper in it is reported. That is bounded by the pool size.
+    """
+    papers = [
+        paper(paper_id="A"),
+        paper(paper_id="B", abstract=""),
+        paper(paper_id="C", abstract=""),
+        paper(paper_id="D"),
+    ]
+    model(0.9, 0.8, 0.7, 0.6)
+
+    reranked = rerank("attention", papers, top_k=5)
+
+    assert [p.paper_id for p in reranked.papers] == ["A", "D"]
+    assert [p.paper_id for p in reranked.possible_non_open_papers] == ["B", "C"]
+
+
+def test_a_blank_query_splits_too_without_loading_the_model(model):
+    """The guard skips scoring, not selection — both paths share the same walk."""
+    stub = model(0.9, 0.1)
+    papers = [
+        paper(paper_id="A", abstract="", relevance_score=1.2),
+        paper(paper_id="B", relevance_score=1.1),
+        paper(paper_id="C", relevance_score=1.0),
+    ]
+
+    reranked = rerank("   ", papers, top_k=1)
+
+    assert [p.paper_id for p in reranked.papers] == ["B"]
+    assert [p.paper_id for p in reranked.possible_non_open_papers] == ["A"]
+    assert stub.calls == []

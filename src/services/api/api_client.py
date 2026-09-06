@@ -1,9 +1,4 @@
-
-from abc import ABC, abstractmethod
-
 import httpx
-
-# from pydantic import BaseModel, ConfigDict
 from tenacity import (
     retry,
     retry_if_exception_type,
@@ -11,18 +6,11 @@ from tenacity import (
     wait_exponential,
 )
 
-from common import PaperData
-
-# class UserProfile(BaseModel):
-#     model_config = ConfigDict(extra="ignore")
-#     id: int
-#     username: str
-#     email: str
 
 class APIError(Exception):
     """Base exception for consumer errors."""
 
-class ResearchApiClient(ABC):
+class ApiClient:
     def __init__(self, base_url: str, timeout: float = 10.0, *, api_x_key: str = "", bearer_token: str = ""):
         headers = {}
         headers["Accept"] = "application/json"
@@ -67,7 +55,3 @@ class ResearchApiClient(ABC):
             raise APIError(f"API status {err.response.status_code}: {err.response.text}") from err
         except httpx.RequestError as err:
             raise APIError(f"Network failure: {err}") from err
-
-    @abstractmethod
-    def search_papers(self, query: str, limit: int = 10) -> list[PaperData]:
-        pass

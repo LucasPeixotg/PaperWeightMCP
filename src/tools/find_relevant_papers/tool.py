@@ -21,8 +21,18 @@ def find_revelant_papers(query: str, top_k: int = 5) -> str:
         top_k: The maximum number of top matching paper abstracts to retrieve (default is 5).
 
     Returns:
-        JSON string containing a list of top-k paper matches with their paper IDs,
-        DOIs, titles, publication years, abstracts, direct paper URLs and licenses.
+        JSON string containing an object with two lists of papers, each paper
+        carrying its paper ID, DOI, title, publication year, abstract, direct
+        paper URL and license.
+
+        `papers` holds up to top_k matches that come with an abstract — the ones
+        worth reading now.
+
+        `possible_non_open_papers` holds matches that ranked among the best but
+        whose abstract the source does not publish, so they carry a title and
+        little else. That often means the work is not openly available, though
+        not always; some publishers restrict the abstract alone. They are still
+        worth following by DOI or URL, and their `abstract` field is empty.
     """
 
     relevant_papers: list[PaperData] = []
@@ -34,7 +44,8 @@ def find_revelant_papers(query: str, top_k: int = 5) -> str:
 
     # open_alex_papers = open_alex_client.search_papers(cleaned_query)
     # Deliberately over-fetched: the reranker can only improve on the order it is
-    # given, so it needs a pool wider than the `top_k` slots it fills.
+    # given, so it needs a pool wider than the `top_k` slots it fills — wider still
+    # now that filling them skips papers with no abstract.
     open_alex_semantic_papers = open_alex_client.semantic_search_papers(
         cleaned_query, limit=max(top_k*2, settings.RERANK_CANDIDATE_POOL)
     )
@@ -50,18 +61,31 @@ def find_revelant_papers(query: str, top_k: int = 5) -> str:
     ## reranking — scored against the raw query, since wildcard cleaning exists
     ## for search APIs that read `?` and `*` as operators, not for a model that
     ## reads the punctuation as language.
-    top_papers = rerank(query, post_processed, top_k)
+    reranked = rerank(query, post_processed, top_k)
 
-    # `relevance_score` is a ranking input, not an answer. Its scale is per-source
-    # and per-search-mode — OpenAlex keyword scores run into the thousands where its
-    # semantic ones sit around 1 — so a caller could only misread it. Dropping it
-    # keeps the returned object the seven fields this docstring promises.
-    result = json.dumps([
+    result = json.dumps(
         {
-            key: value
-            for key, value in dataclasses.asdict(paper).items()
-            if key != "relevance_score"
+            "papers": [_as_response_dict(paper) for paper in reranked.papers],
+            "relevant_without_abstract": [
+                _as_response_dict(paper)
+                for paper in reranked.relevant_without_abstract
+            ],
         }
-        for paper in top_papers
-    ])
+    )
     return result
+
+
+def _as_response_dict(paper: PaperData) -> dict:
+    """One paper as the caller sees it.
+
+    `relevance_score` is a ranking input, not an answer. Its scale is per-source
+    and per-search-mode — OpenAlex keyword scores run into the thousands where its
+    semantic ones sit around 1 — so a caller could only misread it. Dropping it
+    keeps the returned object the seven fields the docstring promises, and keeps
+    both lists the same shape.
+    """
+    return {
+        key: value
+        for key, value in dataclasses.asdict(paper).items()
+        if key != "relevance_score"
+    }

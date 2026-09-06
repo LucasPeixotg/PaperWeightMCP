@@ -3,11 +3,11 @@ import logging
 from common import PaperData
 from config import settings
 
-from .abstract_api_client import APIError, ResearchApiClient
+from .api_client import ApiClient, APIError
 
 logger = logging.getLogger(__name__)
 
-class OpenAlexClient(ResearchApiClient):
+class OpenAlexClient(ApiClient):
     # Fields requested via `select` — the OpenAlex counterpart of Semantic Scholar's
     # `fields`. Anything not listed here is left out of the response, `relevance_score`
     # included: unselected it is simply absent, with no error, which would leave every
