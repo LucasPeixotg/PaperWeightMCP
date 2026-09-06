@@ -6,7 +6,7 @@ from fastmcp import FastMCP
 # from tools.metadata.get_citations import get_citations
 # from tools.metadata.get_references import get_references
 # from tools.metadata.query_paper_metadata import query_paper_metadata
-from tools.find_revelant_papers import find_revelant_papers
+from tools import find_revelant_papers
 
 # Initialize the server
 mcp = FastMCP("Paper Weight Research Assistant")

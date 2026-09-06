@@ -19,7 +19,7 @@ class Settings(BaseSettings):
 
     # SEMANTIC SCHOLAR
     SEMANTIC_SCHOLAR_API_TOKEN: str = ""
-    SEMANTIC_SCHOLAR_API_BASE_URL: str = ""
+    SEMANTIC_SCHOLAR_API_BASE_URL: str = "https://api.semanticscholar.org/graph/v1"
 
     model_config = SettingsConfigDict(
         # Anchored to the repo root so the same config works from any working

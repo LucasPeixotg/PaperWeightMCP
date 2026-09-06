@@ -3,3 +3,6 @@ httpx==0.28.1
 pydantic==2.13.5
 pydantic-settings==2.15.0
 tenacity==9.1.4
+# Unit tests for the research API clients (tests/); httpx.MockTransport, which
+# stands in for the network there, ships with httpx itself.
+pytest>=8
