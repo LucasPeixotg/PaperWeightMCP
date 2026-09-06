@@ -1,4 +1,4 @@
 # models/__init__.py
-from .reranker import rerank
+from .reranker import RerankedPapers, rerank
 
-__all__ = ["rerank"]
+__all__ = ["RerankedPapers", "rerank"]
