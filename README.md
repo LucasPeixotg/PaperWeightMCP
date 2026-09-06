@@ -9,6 +9,12 @@ It holds no local corpus and no database. Every query is answered by searching
 public research APIs live, then merging and reranking the candidates locally with
 a cross-encoder before handing back a short, ordered list.
 
+## Demo
+
+https://github.com/LucasPeixotg/PaperWeightMCP/raw/main/assets/example_usage.mp4
+
+[Watch the demo](assets/example_usage.mp4) if the player above does not load.
+
 ## How it works
 
 A call to `find_relevant_papers` runs one pipeline
