@@ -11,9 +11,7 @@ a cross-encoder before handing back a short, ordered list.
 
 ## Demo
 
-https://github.com/LucasPeixotg/PaperWeightMCP/raw/main/assets/example_usage.mp4
-
-[Watch the demo](assets/example_usage.mp4) if the player above does not load.
+[https://github.com/LucasPeixotg/PaperWeightMCP/raw/main/assets/example_usage.mp4](https://github.com/user-attachments/assets/112bab8e-8bc4-4e4c-bfe7-7f2228ad036c)
 
 ## How it works
 
