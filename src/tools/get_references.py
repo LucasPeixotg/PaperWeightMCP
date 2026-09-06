@@ -1,3 +1,5 @@
+from fastmcp.exceptions import ToolError
+
 
 def get_references(paper_id: str, limit: int = 10) -> str:
     """
@@ -15,4 +17,4 @@ def get_references(paper_id: str, limit: int = 10) -> str:
         JSON string containing titles, lead authors, paper IDs, publication years, 
         and direct PDF links where available.
     """
-    return 'cannot return right now'
+    raise ToolError("Not Yet Implemented")

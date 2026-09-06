@@ -1,3 +1,6 @@
+from fastmcp.exceptions import ToolError
+
+
 def get_author_top_works(author_id: str, limit: int = 10) -> str:
     """
     Retrieves the most influential or highly cited publications by a specific researcher or lab lead.
@@ -14,4 +17,4 @@ def get_author_top_works(author_id: str, limit: int = 10) -> str:
         JSON list of top publications sorted by citation count, including paper IDs, 
         titles, publication years, and total citations.
     """
-    return 'cannot return right now'
+    raise ToolError("Not Yet Implemented")
