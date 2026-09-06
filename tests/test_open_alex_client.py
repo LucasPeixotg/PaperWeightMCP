@@ -3,6 +3,12 @@
 Mirrors tests/test_semantic_scholar_client.py: the mock is swapped into the client
 *after* it is built, so `base_url`, the headers and the timeout are exactly the ones
 production assembles.
+
+The client exposes two searches — keyword (`search`) and embedding-based
+(`search.semantic`) — over one shared request path, `_search_works`. Tests of what the
+two share take the `search` fixture below and therefore run once per entry point; tests
+of what differs (the parameter carrying the query, the per-page ceiling, the query
+truncation) name their method directly.
 """
 
 import json
@@ -22,6 +28,8 @@ from services.api.open_alex_client import OpenAlexClient
 BASE_URL = "https://api.example.test/openalex"
 
 MAX_LIMIT = OpenAlexClient.MAX_LIMIT
+SEMANTIC_MAX_LIMIT = OpenAlexClient.SEMANTIC_MAX_LIMIT
+SEMANTIC_MAX_QUERY_CHARS = OpenAlexClient.SEMANTIC_MAX_QUERY_CHARS
 SEARCH_FIELDS = OpenAlexClient.SEARCH_FIELDS
 
 
@@ -29,6 +37,19 @@ SEARCH_FIELDS = OpenAlexClient.SEARCH_FIELDS
 def no_retry_backoff(monkeypatch):
     """Strip the exponential wait so the retry tests don't sleep ~6s each."""
     monkeypatch.setattr(ResearchApiClient._send.retry, "wait", wait_none())
+
+
+@pytest.fixture(params=["search_papers", "semantic_search_papers"],
+                ids=["keyword", "semantic"])
+def search(request):
+    """Both public searches, so the machinery they share is proven through each.
+
+    The two differ only in which parameter carries the query and how high the per-page
+    ceiling goes. Everything beneath them — the endpoint, the retry, the swallowing of
+    APIError and the mapping to PaperData — is `_search_works`, and a test that reaches
+    it through one caller says nothing about the other.
+    """
+    return request.param
 
 
 def recorder(*results):
@@ -67,7 +88,7 @@ def ok(*items) -> httpx.Response:
 
 
 def logged_api_errors(caplog) -> list[APIError]:
-    """The APIErrors search_papers swallowed.
+    """The APIErrors a search swallowed.
 
     The client logs the exception object itself (`logger.error(error)`), so the
     record's `msg` *is* the APIError — which is how a test proves one was raised
@@ -169,17 +190,121 @@ def test_no_token_sends_no_auth_header(monkeypatch):
     assert "x-api-key" not in calls[0].headers
 
 
+# --- semantic search ----------------------------------------------------------
+
+
+@pytest.mark.parametrize("query", ["", "   ", "\n\t"])
+def test_blank_semantic_query_makes_no_request(monkeypatch, query):
+    """A blank query has nothing to embed; OpenAlex would return the whole index."""
+    handler, calls = recorder(ok())
+    client = make_client(monkeypatch, handler)
+
+    assert client.semantic_search_papers(query) == []
+    assert calls == []
+
+
+def test_semantic_search_hits_the_works_endpoint(monkeypatch):
+    handler, calls = recorder(ok())
+    client = make_client(monkeypatch, handler)
+
+    client.semantic_search_papers("how do transformers attend")
+
+    request = calls[0]
+    assert request.method == "GET"
+    assert str(request.url).startswith(f"{BASE_URL}/works?")
+    assert request.url.params["search.semantic"] == "how do transformers attend"
+    assert request.url.params["select"] == SEARCH_FIELDS
+
+
+def test_semantic_search_sends_no_other_search_parameter(monkeypatch):
+    """The API rejects a request naming more than one of search/search.exact/semantic."""
+    handler, calls = recorder(ok())
+    client = make_client(monkeypatch, handler)
+
+    client.semantic_search_papers("q")
+
+    params = calls[0].url.params
+    assert "search" not in params
+    assert "search.exact" not in params
+
+
+def test_keyword_search_sends_no_semantic_parameter(monkeypatch):
+    """The mirror of the rule above — the shared helper must not leak between paths."""
+    handler, calls = recorder(ok())
+    client = make_client(monkeypatch, handler)
+
+    client.search_papers("q")
+
+    assert "search.semantic" not in calls[0].url.params
+
+
+@pytest.mark.parametrize(
+    "limit, sent",
+    [
+        (0, 1),
+        (-5, 1),
+        (7, 7),
+        (SEMANTIC_MAX_LIMIT, SEMANTIC_MAX_LIMIT),
+        # 200 is legal for the keyword endpoint but not for this one.
+        (MAX_LIMIT, SEMANTIC_MAX_LIMIT),
+        (500, SEMANTIC_MAX_LIMIT),
+    ],
+)
+def test_semantic_limit_is_clamped_to_the_vector_ceiling(monkeypatch, limit, sent):
+    handler, calls = recorder(ok())
+    client = make_client(monkeypatch, handler)
+
+    client.semantic_search_papers("q", limit=limit)
+
+    assert calls[0].url.params["per-page"] == str(sent)
+
+
+@pytest.mark.parametrize(
+    "length, sent_length",
+    [
+        (SEMANTIC_MAX_QUERY_CHARS - 1, SEMANTIC_MAX_QUERY_CHARS - 1),
+        (SEMANTIC_MAX_QUERY_CHARS, SEMANTIC_MAX_QUERY_CHARS),
+        (SEMANTIC_MAX_QUERY_CHARS + 1, SEMANTIC_MAX_QUERY_CHARS),
+        (SEMANTIC_MAX_QUERY_CHARS + 500, SEMANTIC_MAX_QUERY_CHARS),
+    ],
+    ids=["just under", "exactly at", "one over", "well over"],
+)
+def test_a_long_query_is_truncated_before_it_goes_out(
+    monkeypatch, length, sent_length
+):
+    """Only the first 2000 characters are embedded, so the rest never leaves here."""
+    handler, calls = recorder(ok())
+    client = make_client(monkeypatch, handler)
+
+    query = "a" * length
+    client.semantic_search_papers(query)
+
+    sent = calls[0].url.params["search.semantic"]
+    assert len(sent) == sent_length
+    assert sent == query[:sent_length]
+
+
+def test_a_query_under_the_cap_is_sent_verbatim(monkeypatch):
+    handler, calls = recorder(ok())
+    client = make_client(monkeypatch, handler)
+
+    query = "an abstract-length paragraph about protein folding. " * 10
+    client.semantic_search_papers(query)
+
+    assert calls[0].url.params["search.semantic"] == query
+
+
 # --- turning the payload into PaperData ---------------------------------------
 
 
-def test_maps_a_full_record_to_paper_data(monkeypatch):
+def test_maps_a_full_record_to_paper_data(monkeypatch, search):
     handler, _ = recorder(
         ok(item(best_oa_location=location(pdf_url="https://arxiv.org/pdf/1706.03762",
                                           license="cc-by")))
     )
     client = make_client(monkeypatch, handler)
 
-    assert client.search_papers("q") == [
+    assert getattr(client, search)("q") == [
         PaperData(
             paper_id="W2626778328",
             title="Attention Is All You Need",
@@ -198,7 +323,13 @@ def test_paper_id_is_the_bare_id_not_the_url():
     assert paper.paper_id == "W123"
 
 
-def test_every_record_in_the_payload_is_mapped(monkeypatch):
+def test_every_record_in_the_payload_is_mapped(monkeypatch, search):
+    """Payload order is preserved, which is load-bearing for the semantic path.
+
+    OpenAlex returns semantic results sorted by relevance_score descending, and the
+    client deliberately drops that score — position in the list *is* the ranking, so
+    reordering here would silently throw the ranking away.
+    """
     handler, _ = recorder(
         ok(
             item(id="https://openalex.org/W1"),
@@ -208,7 +339,9 @@ def test_every_record_in_the_payload_is_mapped(monkeypatch):
     )
     client = make_client(monkeypatch, handler)
 
-    assert [p.paper_id for p in client.search_papers("q")] == ["W1", "W2", "W3"]
+    papers = getattr(client, search)("q")
+
+    assert [paper.paper_id for paper in papers] == ["W1", "W2", "W3"]
 
 
 def test_missing_fields_coerce_to_empties():
@@ -335,18 +468,18 @@ def test_gaps_in_the_index_are_dropped():
 
 
 @pytest.mark.parametrize("payload", [{}, {"results": None}, {"results": []}])
-def test_empty_payloads_yield_no_papers(monkeypatch, payload):
+def test_empty_payloads_yield_no_papers(monkeypatch, payload, search):
     handler, _ = recorder(httpx.Response(200, json=payload))
     client = make_client(monkeypatch, handler)
 
-    assert client.search_papers("nonsense") == []
+    assert getattr(client, search)("nonsense") == []
 
 
 # --- failures -----------------------------------------------------------------
 
 
 @pytest.mark.parametrize("status", [400, 401, 429, 500])
-def test_http_error_yields_an_empty_list(monkeypatch, caplog, status):
+def test_http_error_yields_an_empty_list(monkeypatch, caplog, status, search):
     """A failed search is empty, not an exception: the APIError stops at the client.
 
     Status errors are still not retried — a 400 stays a 400 however often it's sent.
@@ -355,7 +488,7 @@ def test_http_error_yields_an_empty_list(monkeypatch, caplog, status):
     client = make_client(monkeypatch, handler)
 
     with caplog.at_level(logging.ERROR):
-        assert client.search_papers("q") == []
+        assert getattr(client, search)("q") == []
 
     assert len(calls) == 1
     errors = logged_api_errors(caplog)
@@ -363,7 +496,7 @@ def test_http_error_yields_an_empty_list(monkeypatch, caplog, status):
     assert f"API status {status}" in str(errors[0])
 
 
-def test_status_error_carries_the_upstream_body(monkeypatch, caplog):
+def test_status_error_carries_the_upstream_body(monkeypatch, caplog, search):
     """The caller loses the failure, so the log has to keep what upstream said."""
     handler, _ = recorder(
         httpx.Response(403, text='{"error":"Pagination error."}')
@@ -371,18 +504,18 @@ def test_status_error_carries_the_upstream_body(monkeypatch, caplog):
     client = make_client(monkeypatch, handler)
 
     with caplog.at_level(logging.ERROR):
-        assert client.search_papers("q") == []
+        assert getattr(client, search)("q") == []
 
     assert "Pagination error." in str(logged_api_errors(caplog)[0])
 
 
-def test_transient_timeout_is_retried_then_succeeds(monkeypatch, caplog):
+def test_transient_timeout_is_retried_then_succeeds(monkeypatch, caplog, search):
     """The reason the retry exists: one flaky attempt must not fail the search."""
     handler, calls = recorder(httpx.ReadTimeout("timed out"), ok(item()))
     client = make_client(monkeypatch, handler)
 
     with caplog.at_level(logging.ERROR):
-        papers = client.search_papers("q")
+        papers = getattr(client, search)("q")
 
     assert len(calls) == 2
     assert [p.paper_id for p in papers] == ["W2626778328"]
@@ -395,12 +528,14 @@ def test_transient_timeout_is_retried_then_succeeds(monkeypatch, caplog):
     [httpx.ReadTimeout("timed out"), httpx.ConnectError("connection refused")],
     ids=["timeout", "connect"],
 )
-def test_network_failure_gives_up_after_three_attempts(monkeypatch, caplog, error):
+def test_network_failure_gives_up_after_three_attempts(
+    monkeypatch, caplog, error, search
+):
     handler, calls = recorder(error)
     client = make_client(monkeypatch, handler)
 
     with caplog.at_level(logging.ERROR):
-        assert client.search_papers("q") == []
+        assert getattr(client, search)("q") == []
 
     assert len(calls) == 3
     errors = logged_api_errors(caplog)
@@ -408,7 +543,7 @@ def test_network_failure_gives_up_after_three_attempts(monkeypatch, caplog, erro
     assert "Network failure" in str(errors[0])
 
 
-def test_malformed_json_body_is_not_wrapped(monkeypatch):
+def test_malformed_json_body_is_not_wrapped(monkeypatch, search):
     """The boundary of the `except APIError` clause: only APIError is swallowed.
 
     A 200 carrying junk escapes as a JSON decode error, so the caller sees it
@@ -418,16 +553,16 @@ def test_malformed_json_body_is_not_wrapped(monkeypatch):
     client = make_client(monkeypatch, handler)
 
     with pytest.raises(json.JSONDecodeError):
-        client.search_papers("q")
+        getattr(client, search)("q")
 
 
-def test_unexpected_error_propagates_to_the_caller(monkeypatch, caplog):
+def test_unexpected_error_propagates_to_the_caller(monkeypatch, caplog, search):
     """Anything that isn't an APIError is a bug, not a failed search — let it out."""
     handler, calls = recorder(RuntimeError("boom"))
     client = make_client(monkeypatch, handler)
 
     with caplog.at_level(logging.ERROR), pytest.raises(RuntimeError, match="boom"):
-        client.search_papers("q")
+        getattr(client, search)("q")
 
     # Not a retryable httpx error, so it escapes on the first attempt, unlogged.
     assert len(calls) == 1

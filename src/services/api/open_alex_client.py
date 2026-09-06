@@ -20,6 +20,14 @@ class OpenAlexClient(ResearchApiClient):
     # is what the endpoint actually serves, and what its rejection message names.
     MAX_LIMIT = 200
 
+    # Semantic search runs against a vector index rather than the inverted one, and caps
+    # far lower than the keyword endpoint's 200.
+    SEMANTIC_MAX_LIMIT = 50
+
+    # Only the first 2000 characters are embedded; the rest is dropped server-side, so
+    # there is no reason to put it on the wire.
+    SEMANTIC_MAX_QUERY_CHARS = 2000
+
     def __init__(self, timeout = 10):
         base_url = settings.OPENALEX_API_BASE_URL
         bearer_token = settings.OPENALEX_API_TOKEN
@@ -32,13 +40,46 @@ class OpenAlexClient(ResearchApiClient):
         if not query.strip():
             return []
 
+        return self._search_works({"search": query}, limit, self.MAX_LIMIT)
+
+    def semantic_search_papers(self, query: str, limit: int = 10) -> list[PaperData]:
+        """Rank works by embedding similarity rather than by keyword overlap.
+
+        OpenAlex embeds every work's title and abstract with GTE Large EN and compares
+        the query against them by cosine similarity, so this reaches papers that answer
+        the query in vocabulary it never used — "predicting drug toxicity from molecular
+        structure" finds work that only ever says "QSAR". It rewards long, prose-like
+        input: an abstract or a paragraph beats a handful of keywords.
+        """
+        # Nothing to embed, and OpenAlex would answer with every work in the index —
+        # the same reasoning as the keyword path.
+        if not query.strip():
+            return []
+
+        return self._search_works(
+            {"search.semantic": query[: self.SEMANTIC_MAX_QUERY_CHARS]},
+            limit,
+            self.SEMANTIC_MAX_LIMIT,
+        )
+
+    def _search_works(
+        self, search_param: dict, limit: int, max_limit: int
+    ) -> list[PaperData]:
+        """Issue one /works search and map the payload.
+
+        The keyword and semantic paths differ only in which search parameter carries the
+        query and how high the per-page ceiling goes; everything else — the endpoint, the
+        selected fields, the error handling and the mapping — is shared. `search_param`
+        holds exactly one entry because the API rejects a request naming more than one of
+        `search`, `search.exact` and `search.semantic`.
+        """
         try:
             payload = self._request(
                 "GET",
                 "/works",
                 params={
-                    "search": query,
-                    "per-page": max(1, min(limit, self.MAX_LIMIT)),
+                    **search_param,
+                    "per-page": max(1, min(limit, max_limit)),
                     "select": self.SEARCH_FIELDS,
                 },
             )
