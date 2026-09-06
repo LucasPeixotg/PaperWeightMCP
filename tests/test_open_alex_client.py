@@ -20,7 +20,7 @@ from tenacity import wait_none
 
 from common import PaperData
 from config import settings
-from services.api.abstract_api_client import APIError, ResearchApiClient
+from services.api.api_client import ApiClient, APIError
 from services.api.open_alex_client import OpenAlexClient
 
 # Deliberately not the real host: a test that somehow escapes the mock should fail
@@ -36,7 +36,7 @@ SEARCH_FIELDS = OpenAlexClient.SEARCH_FIELDS
 @pytest.fixture(autouse=True)
 def no_retry_backoff(monkeypatch):
     """Strip the exponential wait so the retry tests don't sleep ~6s each."""
-    monkeypatch.setattr(ResearchApiClient._send.retry, "wait", wait_none())
+    monkeypatch.setattr(ApiClient._send.retry, "wait", wait_none())
 
 
 @pytest.fixture(params=["search_papers", "semantic_search_papers"],

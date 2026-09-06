@@ -3,11 +3,11 @@ import logging
 from common import PaperData
 from config import settings
 
-from .abstract_api_client import APIError, ResearchApiClient
+from .api_client import APIError, ApiClient
 
 logger = logging.getLogger(__name__)
 
-class SemanticScholarClient(ResearchApiClient):
+class SemanticScholarClient(ApiClient):
     # Fields requested from the Graph API — anything not listed here comes back absent.
     SEARCH_FIELDS = "paperId,externalIds,title,year,abstract,url,openAccessPdf"
 
