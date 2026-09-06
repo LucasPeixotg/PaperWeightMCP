@@ -70,7 +70,15 @@ Add PaperWeightMCP to your MCP client configuration:
 
 ## Configuration
 
-<!-- TODO: document environment variables, index paths, and any API keys -->
+Copy `.env.example` to `.env` and adjust as needed. Every value has a working default,
+so an unconfigured checkout still runs — the tokens only raise the rate limits.
+
+| Variable | Default | Required |
+|----------|---------|----------|
+| `SEMANTIC_SCHOLAR_API_BASE_URL` | `https://api.semanticscholar.org/graph/v1` | No |
+| `SEMANTIC_SCHOLAR_API_TOKEN` | *(empty)* | No — unauthenticated requests work at a lower rate limit |
+| `OPENALEX_API_BASE_URL` | `https://api.openalex.org` | No |
+| `OPENALEX_API_TOKEN` | *(empty)* | No — a key only raises the daily request budget |
 
 ## License
 

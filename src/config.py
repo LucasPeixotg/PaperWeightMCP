@@ -21,6 +21,11 @@ class Settings(BaseSettings):
     SEMANTIC_SCHOLAR_API_TOKEN: str = ""
     SEMANTIC_SCHOLAR_API_BASE_URL: str = "https://api.semanticscholar.org/graph/v1"
 
+    # OPENALEX
+    # The token is optional here too — a key only raises the daily budget.
+    OPENALEX_API_TOKEN: str = ""
+    OPENALEX_API_BASE_URL: str = "https://api.openalex.org"
+
     model_config = SettingsConfigDict(
         # Anchored to the repo root so the same config works from any working
         # directory — an MCP client launches src/server.py with a cwd of its own.
