@@ -1,3 +1,6 @@
+from fastmcp.exceptions import ToolError
+
+
 def get_citations(paper_id: str, limit: int = 10) -> str:
     """
     Retrieves a list of papers that have cited the target publication (forward citation search).
@@ -14,4 +17,4 @@ def get_citations(paper_id: str, limit: int = 10) -> str:
         JSON string containing titles, paper IDs, publication years, venues, 
         and citation counts for citing works.
     """
-    return 'cannot return right now'
+    raise ToolError("Not Yet Implemented")
