@@ -297,7 +297,7 @@ def test_the_papers_skipped_while_filling_top_k_come_back_separately(model):
 
     reranked = rerank("attention", papers, top_k=5)
 
-    assert [p.paper_id for p in reranked.possible_non_open_papers] == ["B", "C", "F"]
+    assert [p.paper_id for p in reranked.relevant_without_abstract] == ["B", "C", "F"]
 
 
 def test_an_abstractless_paper_below_the_cut_is_dropped(model):
@@ -316,7 +316,7 @@ def test_an_abstractless_paper_below_the_cut_is_dropped(model):
     reranked = rerank("attention", papers, top_k=2)
 
     assert [p.paper_id for p in reranked.papers] == ["A", "B"]
-    assert reranked.possible_non_open_papers == []
+    assert reranked.relevant_without_abstract == []
 
 
 def test_a_whitespace_only_abstract_counts_as_missing(model):
@@ -327,7 +327,7 @@ def test_a_whitespace_only_abstract_counts_as_missing(model):
     reranked = rerank("attention", papers, top_k=1)
 
     assert [p.paper_id for p in reranked.papers] == ["B"]
-    assert [p.paper_id for p in reranked.possible_non_open_papers] == ["A"]
+    assert [p.paper_id for p in reranked.relevant_without_abstract] == ["A"]
 
 
 def test_a_pool_short_on_abstracts_returns_fewer_than_top_k(model):
@@ -347,7 +347,7 @@ def test_a_pool_short_on_abstracts_returns_fewer_than_top_k(model):
     reranked = rerank("attention", papers, top_k=5)
 
     assert [p.paper_id for p in reranked.papers] == ["A", "D"]
-    assert [p.paper_id for p in reranked.possible_non_open_papers] == ["B", "C"]
+    assert [p.paper_id for p in reranked.relevant_without_abstract] == ["B", "C"]
 
 
 def test_a_blank_query_splits_too_without_loading_the_model(model):
@@ -362,5 +362,5 @@ def test_a_blank_query_splits_too_without_loading_the_model(model):
     reranked = rerank("   ", papers, top_k=1)
 
     assert [p.paper_id for p in reranked.papers] == ["B"]
-    assert [p.paper_id for p in reranked.possible_non_open_papers] == ["A"]
+    assert [p.paper_id for p in reranked.relevant_without_abstract] == ["A"]
     assert stub.calls == []
