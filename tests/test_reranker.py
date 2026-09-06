@@ -38,6 +38,7 @@ def paper(**overrides) -> PaperData:
         "abstract": ABSTRACT,
         "url": "https://arxiv.org/abs/1706.03762",
         "license": "",
+        "relevance_score": 0.0,
     }
 
     return PaperData(**(base | overrides))
@@ -107,8 +108,45 @@ def test_a_top_k_larger_than_the_pool_returns_every_paper(model):
     assert len(rerank("attention", papers, top_k=10)) == 2
 
 
-def test_papers_scoring_equally_keep_their_input_order(model):
-    """Ties fall back to the upstream ranking, which position in the list carries.
+def test_a_score_tie_is_broken_by_the_source_relevance_score(model):
+    """What the second sort key is for: the ranking the source itself gave.
+
+    The cross-encoder ties in practice — most often on the empty document, since
+    OpenAlex ships a null abstract often enough that title-less records collide.
+    The relevance order here runs *against* the input order, so a sort that only
+    leans on stability returns the input unchanged and fails.
+    """
+    papers = [
+        paper(paper_id="A", relevance_score=1.0),
+        paper(paper_id="B", relevance_score=1.2),
+        paper(paper_id="C", relevance_score=1.1),
+    ]
+    model(0.5, 0.5, 0.5)
+
+    ranked = rerank("attention", papers, top_k=3)
+
+    assert [p.paper_id for p in ranked] == ["B", "C", "A"]
+
+
+def test_the_model_score_outranks_the_relevance_score(model):
+    """`relevance_score` breaks ties; it does not get a vote otherwise.
+
+    The upstream bi-encoder is the stage the cross-encoder exists to correct, so a
+    strong upstream score must never pull a paper past one the model scored higher.
+    """
+    papers = [
+        paper(paper_id="A", relevance_score=99.0),
+        paper(paper_id="B", relevance_score=0.1),
+    ]
+    model(0.1, 0.9)
+
+    ranked = rerank("attention", papers, top_k=2)
+
+    assert [p.paper_id for p in ranked] == ["B", "A"]
+
+
+def test_papers_tied_on_both_scores_keep_their_input_order(model):
+    """The last fallback, once neither score separates two papers.
 
     This is also what catches a sort that compares the (paper, score) pairs
     themselves: PaperData has no ordering, so a tie would raise TypeError rather
@@ -163,6 +201,26 @@ def test_a_blank_query_keeps_the_upstream_order_without_loading_the_model(model)
     ranked = rerank("   ", papers, top_k=2)
 
     assert [p.paper_id for p in ranked] == ["A", "B"]
+    assert stub.calls == []
+
+
+def test_a_blank_query_ranks_by_the_source_relevance_score(model):
+    """Nothing is scored, so every paper ties and the tiebreak is the whole ranking.
+
+    Input order stands in for that ranking only while one source fills the pool;
+    sorting is what keeps it true once a second `extend()` makes position mean
+    concatenation order instead.
+    """
+    stub = model()
+    papers = [
+        paper(paper_id="A", relevance_score=1.0),
+        paper(paper_id="B", relevance_score=1.2),
+        paper(paper_id="C", relevance_score=1.1),
+    ]
+
+    ranked = rerank("   ", papers, top_k=2)
+
+    assert [p.paper_id for p in ranked] == ["B", "C"]
     assert stub.calls == []
 
 

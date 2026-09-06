@@ -91,9 +91,11 @@ def remove_duplicates(papers: Iterable[PaperData]) -> list[PaperData]:
       the version that came out of review are one work, and the published record
       carries the better DOI, URL and license, so it survives even when the
       preprint ranked higher. Papers with no evidence either way outrank
-      preprints; a tie goes to the first occurrence, which carries the ranking —
-      position in the list *is* the ranking, as the OpenAlex client drops
-      ``relevance_score`` and relies on payload order.
+      preprints; a tie goes to the first occurrence, since the caller hands the
+      papers over in the order they should be ranked and the surviving copy takes
+      its own position in it. Ranking is not this function's business — it neither
+      reads nor rewrites ``relevance_score``, which travels on each record for the
+      reranker to break its ties with.
     * **An absent identifier is never evidence of sameness.** A paper with no DOI
       is not judged by DOI, and one missing a title or an abstract is not judged
       by the pair. Missing information is not proof that two papers match, and

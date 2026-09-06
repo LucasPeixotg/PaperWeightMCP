@@ -51,8 +51,8 @@ def rerank(query: str, papers: list[PaperData], top_k: int) -> list[PaperData]:
 
     Returns:
         A new list of at most ``top_k`` papers, most relevant first. Papers the
-        model scores equally keep their input order, so the upstream ranking
-        breaks ties.
+        model scores equally are broken apart by ``relevance_score``, the ranking
+        the source itself gave them; papers tied on both keep their input order.
 
     Example:
         >>> rerank("attention mechanisms", papers, top_k=5)  # doctest: +SKIP
@@ -64,10 +64,14 @@ def rerank(query: str, papers: list[PaperData], top_k: int) -> list[PaperData]:
     if top_k <= 0 or not papers:
         return []
 
-    # Nothing to score against. The upstream ranking is the best answer left,
-    # the same reasoning the clients apply to a blank search.
+    # Nothing to score against, so every paper ties and the upstream ranking is the
+    # whole answer — the same reasoning the clients apply to a blank search. Sorting
+    # is what makes that true across sources; input order only carries the ranking
+    # while a single source fills the pool.
     if not query.strip():
-        return papers[:top_k]
+        return sorted(
+            papers, key=lambda paper: paper.relevance_score, reverse=True
+        )[:top_k]
 
     documents = [_as_document(paper) for paper in papers]
     scores = _model.predict(
@@ -77,9 +81,17 @@ def rerank(query: str, papers: list[PaperData], top_k: int) -> list[PaperData]:
 
     # `key` is load-bearing, not style: sorting the pairs themselves would fall
     # through to comparing PaperData on a score tie, and the dataclass carries no
-    # `order=True`, so that raises TypeError. Sorting by the score alone is also
-    # stable, which is what leaves ties in upstream order.
-    ranked = sorted(zip(papers, scores), key=lambda entry: entry[1], reverse=True)
+    # `order=True`, so that raises TypeError. Both members of the key are floats, so
+    # the tuple never reaches the paper either. The cross-encoder does tie in
+    # practice — most often on the empty document, since OpenAlex ships a null
+    # abstract often enough that title-less records collide — and `relevance_score`
+    # is what settles those. The sort stays stable, so a tie on both keys still
+    # falls back to input order.
+    ranked = sorted(
+        zip(papers, scores),
+        key=lambda entry: (entry[1], entry[0].relevance_score),
+        reverse=True,
+    )
 
     return [paper for paper, _ in ranked[:top_k]]
 

@@ -52,5 +52,16 @@ def find_revelant_papers(query: str, top_k: int = 5) -> str:
     ## reads the punctuation as language.
     top_papers = rerank(query, post_processed, top_k)
 
-    result = json.dumps([dataclasses.asdict(paper) for paper in top_papers])
+    # `relevance_score` is a ranking input, not an answer. Its scale is per-source
+    # and per-search-mode — OpenAlex keyword scores run into the thousands where its
+    # semantic ones sit around 1 — so a caller could only misread it. Dropping it
+    # keeps the returned object the seven fields this docstring promises.
+    result = json.dumps([
+        {
+            key: value
+            for key, value in dataclasses.asdict(paper).items()
+            if key != "relevance_score"
+        }
+        for paper in top_papers
+    ])
     return result
