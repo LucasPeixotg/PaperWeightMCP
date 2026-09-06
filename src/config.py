@@ -26,6 +26,18 @@ class Settings(BaseSettings):
     OPENALEX_API_TOKEN: str = ""
     OPENALEX_API_BASE_URL: str = "https://api.openalex.org"
 
+    # RERANKING
+
+    # The cross-encoder that reorders search candidates in
+    # src/services/models/reranker.py.
+    RERANK_MODEL_ID: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+
+    # The cost knob: every candidate in the pool is one cross-encoder forward
+    # pass over a title and a ~1,000-character abstract. Raising it past 50 buys
+    # nothing from OpenAlex alone — `OpenAlexClient.SEMANTIC_MAX_LIMIT` caps the
+    # semantic endpoint there and `_search_works` clamps the request to it.
+    RERANK_CANDIDATE_POOL: int = 40
+
     model_config = SettingsConfigDict(
         # Anchored to the repo root so the same config works from any working
         # directory — an MCP client launches src/server.py with a cwd of its own.
