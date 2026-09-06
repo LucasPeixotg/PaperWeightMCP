@@ -12,7 +12,7 @@ from .query_cleaner import remove_wildcards
 semantic_scholar_client = SemanticScholarClient()
 open_alex_client = OpenAlexClient()
 
-def find_revelant_papers(query: str, top_k: int = 5) -> str:
+def find_relevant_papers(query: str, top_k: int = 5) -> str:
     """
     Finds the most relevant papers through multiple sources that could answer a natural language query.
 
