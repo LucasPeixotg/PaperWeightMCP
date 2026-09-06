@@ -1,3 +1,5 @@
+<img src="./logo.svg" alt="Paper Weight MCP Logo" width="250"/>
+
 # PaperWeightMCP
 
 An MCP server that finds the academic papers most relevant to a natural-language
