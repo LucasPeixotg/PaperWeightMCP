@@ -2,7 +2,6 @@
 from abc import ABC, abstractmethod
 
 import httpx
-from common import PaperData
 
 # from pydantic import BaseModel, ConfigDict
 from tenacity import (
@@ -11,6 +10,8 @@ from tenacity import (
     stop_after_attempt,
     wait_exponential,
 )
+
+from common import PaperData
 
 # class UserProfile(BaseModel):
 #     model_config = ConfigDict(extra="ignore")
@@ -22,11 +23,14 @@ class APIError(Exception):
     """Base exception for consumer errors."""
 
 class ResearchApiClient(ABC):
-    def __init__(self, base_url: str, api_token: str = "", timeout: float = 10.0):
-        headers = {
-            "Authorization": f"Bearer {api_token}",
-            "Accept": "application/json",
-        } if api_token else {}
+    def __init__(self, base_url: str, timeout: float = 10.0, *, api_x_key: str = "", bearer_token: str = ""):
+        headers = {}
+        headers["Accept"] = "application/json"
+        if api_x_key:
+            headers["x-api-key"] = api_x_key
+
+        if bearer_token:
+            headers["Authorization"] = f"Bearer {bearer_token}"
 
         self._client = httpx.Client(
             base_url=base_url,
@@ -46,12 +50,17 @@ class ResearchApiClient(ABC):
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=2, max=10),
-        retry=retry_if_exception_type((httpx.NetworkError, httpx.TimeoutException)),  # Fixed
+        retry=retry_if_exception_type((httpx.NetworkError, httpx.TimeoutException)),
         reraise=True,
     )
+    def _send(self, method: str, endpoint: str, **kwargs) -> httpx.Response:
+        # Transport only. The retry predicate has to see the raw httpx error, so the
+        # translation to APIError happens in _request, after the attempts run out.
+        return self._client.request(method, endpoint, **kwargs)
+
     def _request(self, method: str, endpoint: str, **kwargs) -> dict:
         try:
-            response = self._client.request(method, endpoint, **kwargs)
+            response = self._send(method, endpoint, **kwargs)
             response.raise_for_status()
             return response.json()
         except httpx.HTTPStatusError as err:
@@ -60,5 +69,5 @@ class ResearchApiClient(ABC):
             raise APIError(f"Network failure: {err}") from err
 
     @abstractmethod
-    def search_papers(self, query: str) -> list[PaperData]:
+    def search_papers(self, query: str, limit: int = 10) -> list[PaperData]:
         pass

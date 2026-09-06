@@ -1,9 +1,10 @@
-from fastmcp.exceptions import ToolError
+import dataclasses
+import json
 
+from common import PaperData
 from services.api import SemanticScholarClient
 
 semantic_scholar_client = SemanticScholarClient()
-
 
 def find_revelant_papers(query: str, top_k: int = 5) -> str:
     """
@@ -18,7 +19,12 @@ def find_revelant_papers(query: str, top_k: int = 5) -> str:
         titles, publication years, abstracts, and direct paper URLs.
     """
 
-    # semantic_scholar_papers = semantic_scholar_client.search_papers(query)
-    # return semantic_scholar_papers
+    relevant_papers: list[PaperData] = []
 
-    raise ToolError("Not Yet Implemented")
+    semantic_scholar_papers = semantic_scholar_client.search_papers(query)
+
+    relevant_papers.extend(semantic_scholar_papers)
+    
+    return json.dumps([dataclasses.asdict(paper) for paper in semantic_scholar_papers])
+
+    # raise ToolError("Not Yet Implemented")
