@@ -1,3 +1,5 @@
+from fastmcp.exceptions import ToolError
+
 
 def fetch_full_paper(paper_id_or_url: str) -> str:
     """
@@ -15,4 +17,4 @@ def fetch_full_paper(paper_id_or_url: str) -> str:
         JSON string containing the full extracted plain-text body of the paper, 
         section headers (if parsed), and fetch metadata.
     """
-    return 'cannot return right now'
+    raise ToolError("Not Yet Implemented")

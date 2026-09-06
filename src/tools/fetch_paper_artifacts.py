@@ -1,3 +1,5 @@
+from fastmcp.exceptions import ToolError
+
 
 def fetch_paper_artifacts(paper_id: str) -> str:
     """
@@ -14,4 +16,4 @@ def fetch_paper_artifacts(paper_id: str) -> str:
         JSON object with lists for 'github_repos', 'huggingface_models', 
         'datasets', and 'project_urls'.
     """
-    return 'cannot return right now'
+    raise ToolError("Not Yet Implemented")
