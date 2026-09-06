@@ -307,6 +307,7 @@ def test_maps_a_full_record_to_paper_data(monkeypatch, search):
     assert getattr(client, search)("q") == [
         PaperData(
             paper_id="W2626778328",
+            doi="10.48550/arxiv.1706.03762",
             title="Attention Is All You Need",
             year=2017,
             abstract=PLAIN_ABSTRACT,
@@ -321,6 +322,19 @@ def test_paper_id_is_the_bare_id_not_the_url():
     paper = OpenAlexClient._to_paper_data(item(id="https://openalex.org/W123"))
 
     assert paper.paper_id == "W123"
+
+
+def test_doi_is_the_bare_identifier_not_the_resolver_url():
+    """`doi` arrives as https://doi.org/10.… — callers want the 10.… on its own."""
+    paper = OpenAlexClient._to_paper_data(item())
+
+    assert paper.doi == "10.48550/arxiv.1706.03762"
+
+
+def test_a_missing_doi_is_an_empty_string():
+    paper = OpenAlexClient._to_paper_data(item(doi=None))
+
+    assert paper.doi == ""
 
 
 def test_every_record_in_the_payload_is_mapped(monkeypatch, search):
@@ -345,7 +359,7 @@ def test_every_record_in_the_payload_is_mapped(monkeypatch, search):
 
 
 def test_missing_fields_coerce_to_empties():
-    """Every field is nullable upstream while PaperData requires all six.
+    """Every field is nullable upstream while PaperData requires all seven.
 
     Note the consequence for `year`: a missing year and a genuine year of 0 are
     indistinguishable downstream.
@@ -363,7 +377,7 @@ def test_missing_fields_coerce_to_empties():
     )
 
     assert empty == PaperData(
-        paper_id="", title="", year=0, abstract="", url="", license=""
+        paper_id="", doi="", title="", year=0, abstract="", url="", license=""
     )
 
 
@@ -415,6 +429,14 @@ def test_primary_location_is_the_fallback(best):
 
     assert paper.url == "https://publisher.test/article"
     assert paper.license == "cc-by-nc"
+
+
+def test_the_doi_url_fallback_leaves_the_doi_field_bare():
+    """The two representations meet here: `url` stays a link, `doi` stays an id."""
+    paper = OpenAlexClient._to_paper_data(item())
+
+    assert paper.url == "https://doi.org/10.48550/arxiv.1706.03762"
+    assert paper.doi == "10.48550/arxiv.1706.03762"
 
 
 def test_doi_is_the_last_resort_and_carries_no_license():

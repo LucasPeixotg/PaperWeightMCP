@@ -24,6 +24,12 @@ class OpenAlexClient(ResearchApiClient):
     # far lower than the keyword endpoint's 200.
     SEMANTIC_MAX_LIMIT = 50
 
+    # OpenAlex publishes DOIs in resolver-URL form; the bare identifier is what the
+    # other APIs take back, so the prefix comes off in `_bare_doi`. Note the `url`
+    # fallback in `_to_paper_data` deliberately keeps the URL form — there the DOI is a
+    # link, not an identifier.
+    DOI_URL_PREFIX = "https://doi.org/"
+
     # Only the first 2000 characters are embedded; the rest is dropped server-side, so
     # there is no reason to put it on the wire.
     SEMANTIC_MAX_QUERY_CHARS = 2000
@@ -91,7 +97,7 @@ class OpenAlexClient(ResearchApiClient):
 
     @staticmethod
     def _to_paper_data(item: dict) -> PaperData:
-        # Every field is nullable while PaperData requires all six, so each value is
+        # Every field is nullable while PaperData requires all seven, so each value is
         # coerced to its empty equivalent.
         best = item.get("best_oa_location") or {}
         primary = item.get("primary_location") or {}
@@ -112,6 +118,7 @@ class OpenAlexClient(ResearchApiClient):
 
         return PaperData(
             paper_id=openalex_id.rsplit("/", 1)[-1],
+            doi=OpenAlexClient._bare_doi(item.get("doi")),
             title=item.get("display_name") or "",
             year=item.get("publication_year") or 0,
             abstract=OpenAlexClient._abstract_from_inverted_index(
@@ -120,6 +127,13 @@ class OpenAlexClient(ResearchApiClient):
             url=url,
             license=license_,
         )
+
+    @staticmethod
+    def _bare_doi(value: str | None) -> str:
+        if not value:
+            return ""
+
+        return value.removeprefix(OpenAlexClient.DOI_URL_PREFIX)
 
     @staticmethod
     def _abstract_from_inverted_index(index: dict | None) -> str:

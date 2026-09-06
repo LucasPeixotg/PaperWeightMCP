@@ -80,6 +80,7 @@ def logged_api_errors(caplog) -> list[APIError]:
 def item(**overrides) -> dict:
     base = {
         "paperId": "p1",
+        "externalIds": {"DOI": "10.48550/arXiv.1706.03762", "ArXiv": "1706.03762"},
         "title": "Attention Is All You Need",
         "year": 2017,
         "abstract": "The dominant sequence transduction models...",
@@ -163,6 +164,7 @@ def test_maps_a_full_record_to_paper_data(monkeypatch):
     assert client.search_papers("q") == [
         PaperData(
             paper_id="p1",
+            doi="10.48550/arXiv.1706.03762",
             title="Attention Is All You Need",
             year=2017,
             abstract="The dominant sequence transduction models...",
@@ -180,18 +182,46 @@ def test_every_record_in_the_payload_is_mapped(monkeypatch):
 
 
 def test_missing_fields_coerce_to_empties():
-    """Every search field is nullable upstream while PaperData requires all six.
+    """Every search field is nullable upstream while PaperData requires all seven.
 
     Note the consequence for `year`: a missing year and a genuine year of 0 are
     indistinguishable downstream.
     """
     empty = SemanticScholarClient._to_paper_data(
-        {"paperId": None, "title": None, "year": None, "abstract": None, "url": None}
+        {
+            "paperId": None,
+            "externalIds": None,
+            "title": None,
+            "year": None,
+            "abstract": None,
+            "url": None,
+        }
     )
 
     assert empty == PaperData(
-        paper_id="", title="", year=0, abstract="", url="", license=""
+        paper_id="", doi="", title="", year=0, abstract="", url="", license=""
     )
+
+
+@pytest.mark.parametrize(
+    "external_ids",
+    [None, {}, {"ArXiv": "1706.03762"}],
+    ids=["null", "empty", "no-doi-key"],
+)
+def test_a_record_without_a_doi_maps_to_an_empty_string(external_ids):
+    """Plenty of records carry other external ids but no DOI — preprints, theses."""
+    paper = SemanticScholarClient._to_paper_data(item(externalIds=external_ids))
+
+    assert paper.doi == ""
+
+
+def test_the_doi_comes_from_external_ids():
+    """There is no top-level `doi` in a Graph API record; it is nested and upper-cased."""
+    paper = SemanticScholarClient._to_paper_data(
+        item(externalIds={"DOI": "10.1038/s41586-020-2649-2"})
+    )
+
+    assert paper.doi == "10.1038/s41586-020-2649-2"
 
 
 def test_open_access_pdf_wins_over_the_landing_page():

@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 class SemanticScholarClient(ResearchApiClient):
     # Fields requested from the Graph API — anything not listed here comes back absent.
-    SEARCH_FIELDS = "paperId,title,year,abstract,url,openAccessPdf"
+    SEARCH_FIELDS = "paperId,externalIds,title,year,abstract,url,openAccessPdf"
 
     # The relevance search endpoint rejects a limit above 100.
     MAX_LIMIT = 100
@@ -44,11 +44,16 @@ class SemanticScholarClient(ResearchApiClient):
     @staticmethod
     def _to_paper_data(item: dict) -> PaperData:
         # Every field is nullable in a search response, while PaperData requires all
-        # six, so each value is coerced to its empty equivalent.
+        # seven, so each value is coerced to its empty equivalent.
         open_access = item.get("openAccessPdf") or {}
+
+        # The Graph API has no top-level doi; it lives under externalIds, keyed
+        # upper-case, alongside ArXiv, MAG and the rest. It arrives bare already.
+        external_ids = item.get("externalIds") or {}
 
         return PaperData(
             paper_id=item.get("paperId") or "",
+            doi=external_ids.get("DOI") or "",
             title=item.get("title") or "",
             year=item.get("year") or 0,
             abstract=item.get("abstract") or "",
