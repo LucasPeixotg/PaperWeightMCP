@@ -28,7 +28,7 @@ def find_relevant_papers(query: str, top_k: int = 5) -> str:
         `papers` holds up to top_k matches that come with an abstract — the ones
         worth reading now.
 
-        `possible_non_open_papers` holds matches that ranked among the best but
+        `relevant_without_abstract` holds matches that ranked among the best but
         whose abstract the source does not publish, so they carry a title and
         little else. That often means the work is not openly available, though
         not always; some publishers restrict the abstract alone. They are still
