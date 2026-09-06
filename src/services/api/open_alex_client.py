@@ -9,10 +9,12 @@ logger = logging.getLogger(__name__)
 
 class OpenAlexClient(ResearchApiClient):
     # Fields requested via `select` — the OpenAlex counterpart of Semantic Scholar's
-    # `fields`. Anything not listed here is left out of the response.
+    # `fields`. Anything not listed here is left out of the response, `relevance_score`
+    # included: unselected it is simply absent, with no error, which would leave every
+    # paper at the default 0.0 and silently disable the reranker's tiebreak.
     SEARCH_FIELDS = (
         "id,doi,display_name,publication_year,"
-        "abstract_inverted_index,best_oa_location,primary_location"
+        "abstract_inverted_index,best_oa_location,primary_location,relevance_score"
     )
 
     # The API rejects a per-page outside 1..200 with a "Pagination error". Note that
@@ -126,6 +128,9 @@ class OpenAlexClient(ResearchApiClient):
             ),
             url=url,
             license=license_,
+            # Absent on any request carrying no search parameter, and null-able even
+            # when present; both mean "this source did not rank this record".
+            relevance_score=float(item.get("relevance_score") or 0.0),
         )
 
     @staticmethod

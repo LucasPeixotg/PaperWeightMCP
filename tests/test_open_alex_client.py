@@ -117,6 +117,7 @@ def item(**overrides) -> dict:
         "abstract_inverted_index": dict(INVERTED_ABSTRACT),
         "best_oa_location": None,
         "primary_location": None,
+        "relevance_score": 1.2024246507243719,
     }
     return base | overrides
 
@@ -152,6 +153,22 @@ def test_search_hits_the_works_endpoint(monkeypatch):
     assert str(request.url).startswith(f"{BASE_URL}/works?")
     assert request.url.params["search"] == "transformers"
     assert request.url.params["select"] == SEARCH_FIELDS
+
+
+def test_relevance_score_is_among_the_selected_fields(monkeypatch, search):
+    """The assertions above compare `select` to the constant, so both move together.
+
+    This one names the field, because leaving it out of `select` is the one way this
+    breaks in silence: OpenAlex does not reject an unselected field, it just omits it,
+    the mapping reads a missing key as 0.0, and the reranker's tiebreak quietly stops
+    doing anything. Nothing else in the suite would notice.
+    """
+    handler, calls = recorder(ok())
+    client = make_client(monkeypatch, handler)
+
+    getattr(client, search)("transformers")
+
+    assert "relevance_score" in calls[0].url.params["select"].split(",")
 
 
 @pytest.mark.parametrize(
@@ -313,6 +330,7 @@ def test_maps_a_full_record_to_paper_data(monkeypatch, search):
             abstract=PLAIN_ABSTRACT,
             url="https://arxiv.org/pdf/1706.03762",
             license="cc-by",
+            relevance_score=1.2024246507243719,
         )
     ]
 
@@ -331,6 +349,29 @@ def test_doi_is_the_bare_identifier_not_the_resolver_url():
     assert paper.doi == "10.48550/arxiv.1706.03762"
 
 
+def test_relevance_score_is_carried_through_as_a_float():
+    """The upstream ranking, which the reranker breaks its own ties with."""
+    paper = OpenAlexClient._to_paper_data(item(relevance_score=1.185))
+
+    assert paper.relevance_score == 1.185
+
+
+def test_a_null_relevance_score_is_zero():
+    assert OpenAlexClient._to_paper_data(item(relevance_score=None)).relevance_score == 0.0
+
+
+def test_a_record_with_no_relevance_score_at_all_is_zero():
+    """OpenAlex omits the key on any request carrying no search parameter.
+
+    It is also exactly what comes back if the field ever falls out of `select`, which
+    is why the absent key is worth a case of its own rather than only the null one.
+    """
+    payload = item()
+    del payload["relevance_score"]
+
+    assert OpenAlexClient._to_paper_data(payload).relevance_score == 0.0
+
+
 def test_a_missing_doi_is_an_empty_string():
     paper = OpenAlexClient._to_paper_data(item(doi=None))
 
@@ -338,11 +379,12 @@ def test_a_missing_doi_is_an_empty_string():
 
 
 def test_every_record_in_the_payload_is_mapped(monkeypatch, search):
-    """Payload order is preserved, which is load-bearing for the semantic path.
+    """Payload order is preserved, which is what the caller ranks by.
 
-    OpenAlex returns semantic results sorted by relevance_score descending, and the
-    client deliberately drops that score — position in the list *is* the ranking, so
-    reordering here would silently throw the ranking away.
+    OpenAlex returns results sorted by relevance_score descending. The score now
+    rides along on each record, so a reordering here would no longer lose the
+    ranking outright — but the pipeline still reads position as the order to rank
+    in, and `remove_duplicates` restores that order rather than the score's.
     """
     handler, _ = recorder(
         ok(
@@ -373,11 +415,19 @@ def test_missing_fields_coerce_to_empties():
             "abstract_inverted_index": None,
             "best_oa_location": None,
             "primary_location": None,
+            "relevance_score": None,
         }
     )
 
     assert empty == PaperData(
-        paper_id="", doi="", title="", year=0, abstract="", url="", license=""
+        paper_id="",
+        doi="",
+        title="",
+        year=0,
+        abstract="",
+        url="",
+        license="",
+        relevance_score=0.0,
     )
 
 

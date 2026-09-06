@@ -11,7 +11,7 @@ information they do not carry.
 import pytest
 
 from common import PaperData
-from utils.paper_deduplicator import remove_duplicates
+from tools.find_relevant_papers.paper_deduplicator import remove_duplicates
 
 # The same work as OpenAlex and as Semantic Scholar publish it. Identical DOIs by
 # specification, different strings by casing — the pair the function has to catch.
