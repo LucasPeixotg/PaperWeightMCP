@@ -1,6 +1,6 @@
-<img src="./logo.svg" alt="Paper Weight MCP Logo" width="250"/>
+<img src="./logo.svg" alt="Paper Hook MCP Logo" width="250"/>
 
-# PaperWeightMCP
+# Paper Hook MCP
 
 An MCP server that finds the academic papers most relevant to a natural-language
 research question.
@@ -11,7 +11,7 @@ a cross-encoder before handing back a short, ordered list.
 
 ## Demo
 
-[https://github.com/LucasPeixotg/PaperWeightMCP/raw/main/assets/example_usage.mp4](https://github.com/user-attachments/assets/112bab8e-8bc4-4e4c-bfe7-7f2228ad036c)
+[https://github.com/LucasPeixotg/PaperHookMCP/raw/main/assets/example_usage.mp4](https://github.com/user-attachments/assets/112bab8e-8bc4-4e4c-bfe7-7f2228ad036c)
 
 ## How it works
 
@@ -57,9 +57,9 @@ The server speaks MCP over stdio. To register it with an MCP client:
 ```json
 {
   "mcpServers": {
-    "paperweight": {
-      "command": "/absolute/path/to/PaperWeightMCP/venv/bin/python",
-      "args": ["/absolute/path/to/PaperWeightMCP/src/server.py"]
+    "paperhook": {
+      "command": "/absolute/path/to/PaperHookMCP/venv/bin/python",
+      "args": ["/absolute/path/to/PaperHookMCP/src/server.py"]
     }
   }
 }
